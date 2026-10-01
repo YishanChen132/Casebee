@@ -1,0 +1,38 @@
+[
+  {
+    "id": "holdout-collab-podcast-001",
+    "category": "collaboration_invite",
+    "senderName": "聲浪文化 Tina",
+    "text": "Subject: 合作邀約\n\n我們是聲浪文化，想邀請你協助一支 Reels 宣傳 Podcast 新節目，預計 12/05 上線，預算還在確認。",
+    "expected": {"clientName": "聲浪文化", "projectItem": "Reels", "quoteAmount": null, "expectedDeadline": "12/05", "publishDeadline": "12/05", "intent": "合作邀請", "missingFields": ["quote_amount", "usage_rights", "revision_scope", "deliverables"]}
+  },
+  {
+    "id": "holdout-quote-dm-002",
+    "category": "quote_inquiry",
+    "senderName": "青森旅店",
+    "text": "想詢問 DM 設計，一式雙面，預算 9,000 元，這週五前可以交第一版嗎？",
+    "expected": {"clientName": "青森旅店", "projectItem": "DM 設計", "quoteAmount": 9000, "expectedDeadline": "這週五", "submissionDeadline": "這週五", "intent": "詢價", "missingFields": []}
+  },
+  {
+    "id": "holdout-risk-delay-003",
+    "category": "deadline_or_material_risk",
+    "senderName": "禾田選品",
+    "text": "拍攝商品還沒到，素材可能明天才補齊，原定本週交付應該會趕不上。",
+    "expected": {"clientName": "禾田選品", "projectItem": "產品攝影", "quoteAmount": null, "expectedDeadline": "本週", "submissionDeadline": "本週", "intent": "交期風險", "missingFields": ["quote_amount", "materials", "revision_scope"]}
+  },
+  {
+    "id": "holdout-confirm-logo-004",
+    "category": "confirmation_or_contract",
+    "senderName": "光點甜品",
+    "text": "Logo + 名片設計確認合作，報價 15,000 元可以，請提供合約，10/10 前交付。",
+    "expected": {"clientName": "光點甜品", "projectItem": "Logo + 名片設計", "quoteAmount": 15000, "expectedDeadline": "10/10", "submissionDeadline": "10/10", "nextAction": "確認合約", "intent": "確認合作", "missingFields": []}
+  },
+  {
+    "id": "holdout-noncase-security-005",
+    "category": "system_notification",
+    "senderName": "Google",
+    "text": "你的 Google 驗證碼是 445566，請勿提供給任何人。",
+    "expectedClassification": "system_notification",
+    "expected": null
+  }
+]

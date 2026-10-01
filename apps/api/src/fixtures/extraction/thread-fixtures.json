@@ -1,0 +1,47 @@
+[
+  {
+    "id": "thread-reels-budget-followup",
+    "existingCase": {"customerName": "LumiNote", "projectItem": "Reels 影片", "quoteAmount": null, "expectedDeadline": "9/15", "intent": "合作邀請", "caseStatus": "需求確認中", "missingFields": ["quote_amount", "usage_rights", "revision_scope", "deliverables"]},
+    "messages": [
+      {"senderName": "LumiNote", "text": "我們想邀請你拍一支 App 宣傳影片，9/15 前上線。"},
+      {"senderName": "LumiNote Amy", "text": "補充一下，這次 Reels 預算大約 20,000 元，授權希望是 IG 和官網使用 6 個月。"}
+    ],
+    "expected": {"clientName": "LumiNote", "projectItem": "Reels 影片", "quoteAmount": 20000, "expectedDeadline": "9/15", "intent": "一般訊息", "inheritedFields": ["projectItem", "expectedDeadline"], "changedFields": ["quoteAmount"], "conflictingFields": [], "needsHumanReview": true}
+  },
+  {
+    "id": "thread-website-deadline-conflict",
+    "existingCase": {"customerName": "遠嶼科技", "projectItem": "網站重新設計", "quoteAmount": 98000, "expectedDeadline": "11/30", "submissionDeadline": null, "publishDeadline": "11/30", "nextAction": null, "requiredMaterials": [], "providedMaterials": [], "intent": "確認合作", "caseStatus": "進行中", "missingFields": []},
+    "messages": [
+      {"senderName": "遠嶼科技", "text": "網站重新設計確認可以合作，報價 98,000 元，預計 11/30 上線。"},
+      {"senderName": "遠嶼科技", "text": "內部希望提前到 11/15 上線，其他範圍不變。"}
+    ],
+    "expected": {"clientName": "遠嶼科技", "projectItem": "網站重新設計", "quoteAmount": 98000, "expectedDeadline": "11/30", "submissionDeadline": null, "publishDeadline": "11/30", "nextAction": null, "requiredMaterials": [], "intent": "一般訊息", "inheritedFields": ["projectItem", "quoteAmount"], "changedFields": ["expectedDeadline", "publishDeadline"], "conflictingFields": ["expectedDeadline", "publishDeadline"], "needsHumanReview": true}
+  },
+  {
+    "id": "thread-social-scope-change",
+    "existingCase": {"customerName": "山禾甜點", "projectItem": "IG 貼文設計", "quoteAmount": 8500, "expectedDeadline": "本週", "intent": "詢價", "caseStatus": "需求確認中", "missingFields": ["scope"]},
+    "messages": [
+      {"senderName": "山禾甜點", "text": "想做 3 張 IG 貼文，預算 8,500，本週交。"},
+      {"senderName": "山禾甜點", "text": "可以改成 5 張貼文嗎？如果需要調整報價可以。"}
+    ],
+    "expected": {"clientName": "山禾甜點", "projectItem": "IG 貼文設計", "quoteAmount": 8500, "expectedDeadline": "本週", "intent": "修改需求", "inheritedFields": ["quoteAmount", "expectedDeadline"], "changedFields": [], "conflictingFields": [], "needsHumanReview": false}
+  },
+  {
+    "id": "thread-submission-deadline-conflict",
+    "existingCase": {"customerName": "紙月設計", "projectItem": "Logo", "quoteAmount": 12000, "expectedDeadline": "9/12", "submissionDeadline": "9/12", "publishDeadline": null, "nextAction": "準備／提交初稿", "requiredMaterials": [], "providedMaterials": [], "intent": "確認合作", "caseStatus": "進行中", "missingFields": []},
+    "messages": [
+      {"senderName": "紙月設計", "text": "Logo 修改稿 9/12 交給我們。"},
+      {"senderName": "紙月設計", "text": "交稿日想提前到 9/10，可以嗎？"}
+    ],
+    "expected": {"clientName": "紙月設計", "projectItem": "Logo", "quoteAmount": 12000, "expectedDeadline": "9/12", "submissionDeadline": "9/12", "publishDeadline": null, "nextAction": "準備／提交初稿", "requiredMaterials": [], "intent": "一般訊息", "inheritedFields": ["projectItem", "quoteAmount"], "changedFields": ["expectedDeadline", "submissionDeadline"], "conflictingFields": ["expectedDeadline", "submissionDeadline"], "needsHumanReview": true}
+  },
+  {
+    "id": "thread-one-of-two-deadlines-conflict",
+    "existingCase": {"customerName": "日光製作", "projectItem": "Reels 影片", "quoteAmount": 20000, "expectedDeadline": "9/10", "submissionDeadline": "9/10", "publishDeadline": "9/15", "nextAction": "準備／提交初稿", "requiredMaterials": [], "providedMaterials": [], "intent": "確認合作", "caseStatus": "進行中", "missingFields": []},
+    "messages": [
+      {"senderName": "日光製作", "text": "9/10 前交初稿，9/15 上線。"},
+      {"senderName": "日光製作", "text": "上線改成 9/18，初稿日不變。"}
+    ],
+    "expected": {"clientName": "日光製作", "projectItem": "Reels 影片", "quoteAmount": 20000, "expectedDeadline": "9/10", "submissionDeadline": "9/10", "publishDeadline": "9/15", "nextAction": "準備／提交初稿", "requiredMaterials": [], "intent": "修改需求", "inheritedFields": ["projectItem", "quoteAmount", "expectedDeadline", "submissionDeadline", "nextAction"], "changedFields": ["publishDeadline"], "conflictingFields": ["publishDeadline"], "needsHumanReview": true}
+  }
+]

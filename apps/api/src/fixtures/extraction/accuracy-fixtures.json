@@ -1,0 +1,212 @@
+[
+  {
+    "id": "gmail-collab-reels-001",
+    "category": "collaboration_invite",
+    "senderName": "Amy",
+    "text": "Subject: 【合作邀請】LumiNote × 小晴｜短影音宣傳合作邀約\n\n我是 LumiNote 行銷團隊的 Amy。合作形式：Instagram Reels 一支\n影片長度：30～60 秒\n預計上線時間：2026 年 9 月 15 日前\n其他需求：發布後以 Instagram 限時動態轉發一次",
+    "expected": {"clientName": "LumiNote", "projectItem": "Instagram Reels", "quoteAmount": null, "expectedDeadline": "2026 年 9 月 15 日", "publishDeadline": "2026 年 9 月 15 日", "intent": "合作邀請", "missingFields": ["quote_amount", "usage_rights", "revision_scope", "deliverables"]}
+  },
+  {
+    "id": "gmail-collab-video-ambiguous-002",
+    "category": "collaboration_invite",
+    "senderName": "LumiNote",
+    "text": "Subject: 合作邀請\n\n我們想邀請你合作拍一支生活感的筆記 App 宣傳影片，9/15 前上線，會需要 IG 限動轉發。",
+    "expected": {"clientName": "LumiNote", "projectItem": "Reels 影片", "quoteAmount": null, "expectedDeadline": "9/15", "publishDeadline": "9/15", "intent": "合作邀請", "missingFields": ["quote_amount", "usage_rights", "revision_scope", "deliverables"]}
+  },
+  {
+    "id": "gmail-quote-website-003",
+    "category": "quote_inquiry",
+    "senderName": "晴天行銷",
+    "text": "想詢問官網設計報價，預算大約 120,000 元，希望 10/20 前完成，請問可以接嗎？",
+    "expected": {"clientName": "晴天行銷", "projectItem": "官網設計", "quoteAmount": 120000, "expectedDeadline": "10/20", "intent": "詢價", "missingFields": ["scope", "contract"]}
+  },
+  {
+    "id": "gmail-quote-logo-004",
+    "category": "quote_inquiry",
+    "senderName": "森川工作室",
+    "text": "您好，我們新品牌想做 Logo 和名片，想知道費用大概多少？希望月底前能有第一版。",
+    "expected": {"clientName": "森川工作室", "projectItem": "Logo", "quoteAmount": null, "expectedDeadline": "月底", "submissionDeadline": "月底", "nextAction": "提供報價", "intent": "詢價", "missingFields": ["quote_amount", "reference"]}
+  },
+  {
+    "id": "line-revision-scope-005",
+    "category": "revision_request",
+    "senderName": "小島咖啡",
+    "text": "Logo 想再修改一下，順便追加一張菜單 Banner，月底前可以完成嗎？",
+    "expected": {"clientName": "小島咖啡", "projectItem": "Logo", "quoteAmount": null, "expectedDeadline": "月底", "intent": "修改需求", "missingFields": ["quote_amount"]}
+  },
+  {
+    "id": "line-revision-ig-post-006",
+    "category": "revision_request",
+    "senderName": "山禾甜點",
+    "text": "原本 3 張 IG 貼文可以改成 5 張嗎？如果這週五前要交，報價需要調整也可以。",
+    "expected": {"clientName": "山禾甜點", "projectItem": "IG 貼文設計", "quoteAmount": null, "expectedDeadline": "這週五", "submissionDeadline": "這週五", "intent": "修改需求", "missingFields": ["quote_amount", "scope"]}
+  },
+  {
+    "id": "line-risk-material-007",
+    "category": "deadline_or_material_risk",
+    "senderName": "森木科技",
+    "text": "產品攝影素材下週才能給你，原本後天交件可能來不及，需要延後。",
+    "expected": {"clientName": "森木科技", "projectItem": "產品攝影", "quoteAmount": null, "expectedDeadline": "後天", "submissionDeadline": "後天", "intent": "交期風險", "missingFields": ["quote_amount", "materials", "revision_scope"]}
+  },
+  {
+    "id": "gmail-contract-website-008",
+    "category": "confirmation_or_contract",
+    "senderName": "遠嶼科技",
+    "text": "網站重新設計確認可以合作，報價 98,000 元我們接受。請先提供合約與首付款資訊，預計 11/30 上線。",
+    "expected": {"clientName": "遠嶼科技", "projectItem": "網站重新設計", "quoteAmount": 98000, "expectedDeadline": "11/30", "publishDeadline": "11/30", "nextAction": "確認合約", "intent": "確認合作", "missingFields": []}
+  },
+  {
+    "id": "gmail-collab-brand-vague-009",
+    "category": "collaboration_invite",
+    "senderName": "Mori Select",
+    "text": "Subject: 品牌合作洽詢\n\n我們是 Mori Select，想找你聊聊接下來的宣傳合作，還沒有確定預算和形式，想先看你是否有興趣。",
+    "expected": {"clientName": "Mori Select", "projectItem": "品牌合作", "quoteAmount": null, "expectedDeadline": null, "intent": "合作邀請", "missingFields": ["project_item", "quote_amount", "expected_deadline", "deliverables", "usage_rights"]}
+  },
+  {
+    "id": "gmail-photo-quote-010",
+    "category": "quote_inquiry",
+    "senderName": "禾日生活",
+    "text": "我們有 12 款新品需要產品攝影和修圖，預算約 28,000，想在 8 月 30 日前完成。",
+    "expected": {"clientName": "禾日生活", "projectItem": "產品攝影", "quoteAmount": 28000, "expectedDeadline": "8 月 30 日", "intent": "詢價", "missingFields": ["revision_scope"]}
+  },
+  {
+    "id": "gmail-cancel-011",
+    "category": "cancellation",
+    "senderName": "米平方設計",
+    "text": "不好意思，這次 Banner 設計因為內部預算取消，先暫停合作，謝謝你之前提供的報價。",
+    "expected": {"clientName": "米平方設計", "projectItem": "Banner", "quoteAmount": null, "expectedDeadline": null, "intent": "取消合作", "missingFields": []}
+  },
+  {
+    "id": "gmail-follow-up-budget-012",
+    "category": "thread_follow_up",
+    "senderName": "LumiNote Amy",
+    "text": "補充一下，這次 Reels 預算大約 20,000 元，授權希望是 IG 和官網使用 6 個月。",
+    "expected": {"clientName": "LumiNote", "projectItem": "Reels", "quoteAmount": 20000, "expectedDeadline": null, "intent": "一般訊息", "missingFields": ["expected_deadline", "revision_scope", "deliverables"]}
+  },
+  {
+    "id": "gmail-landing-page-013",
+    "category": "quote_inquiry",
+    "senderName": "Nova Lab",
+    "text": "Hi，我們想做一頁 landing page 介紹新服務，預算 60k，10 月底前上線，想請你估價。",
+    "expected": {"clientName": "Nova Lab", "projectItem": "網站重新設計", "quoteAmount": 60000, "expectedDeadline": "10 月底", "publishDeadline": "10 月底", "nextAction": "提供報價", "intent": "詢價", "missingFields": ["scope", "contract"]}
+  },
+  {
+    "id": "gmail-noncase-calendar-014",
+    "category": "calendar_invite",
+    "senderName": "Google Calendar",
+    "text": "邀請：專案會議 @ 2026年9月1日 上午10點 - Google Calendar",
+    "expectedClassification": "calendar_invite",
+    "expected": null
+  },
+  {
+    "id": "gmail-noncase-newsletter-015",
+    "category": "newsletter",
+    "senderName": "Design Weekly",
+    "text": "本週設計靈感 newsletter，點此取消訂閱 unsubscribe。",
+    "expectedClassification": "newsletter",
+    "expected": null
+  },
+  {
+    "id": "gmail-noncase-system-016",
+    "category": "system_notification",
+    "senderName": "npm",
+    "text": "Your npm one-time password is 123456. This is a two-factor authentication message.",
+    "expectedClassification": "system_notification",
+    "expected": null
+  },
+  {
+    "id": "gmail-noncase-announcement-017",
+    "category": "announcement",
+    "senderName": "北科大 活動中心",
+    "text": "第一屆金融科技獎競賽入圍公告，請入圍團隊於期限內完成報名資料。",
+    "expectedClassification": "announcement",
+    "expected": null
+  },
+  {
+    "id": "gmail-social-post-018",
+    "category": "quote_inquiry",
+    "senderName": "慢慢選物",
+    "text": "想請你做 6 張社群貼文，風格參考我們 IG，目前沒有預算，9/10 前可以完成嗎？",
+    "expected": {"clientName": "慢慢選物", "projectItem": "社群貼文", "quoteAmount": null, "expectedDeadline": "9/10", "intent": "詢價", "missingFields": ["quote_amount", "scope"]}
+  },
+  {
+    "id": "gmail-package-design-019",
+    "category": "quote_inquiry",
+    "senderName": "沐白茶室",
+    "text": "我們想委託包裝設計，包含外盒和貼紙，預算約 35,000 元，預計 2026/10/05 完稿。",
+    "expected": {"clientName": "沐白茶室", "projectItem": "包裝設計", "quoteAmount": 35000, "expectedDeadline": "2026/10/05", "submissionDeadline": "2026/10/05", "intent": "詢價", "missingFields": []}
+  },
+  {
+    "id": "gmail-presentation-020",
+    "category": "quote_inquiry",
+    "senderName": "Orbit 教育",
+    "text": "需要簡報設計 30 頁，費用希望控制在 18,000 以內，下週五前交第一版。",
+    "expected": {"clientName": "Orbit 教育", "projectItem": "簡報設計", "quoteAmount": 18000, "expectedDeadline": "下週五", "submissionDeadline": "下週五", "intent": "詢價", "missingFields": []}
+  },
+  {
+    "id": "deadline-both-021",
+    "category": "deadline_semantics",
+    "senderName": "日光製作",
+    "receivedAt": "2026-08-31T00:00:00+08:00",
+    "text": "Reels 影片 9/10 前交初稿，9/15 上線，請提供報價。",
+    "expected": {"clientName": "日光製作", "projectItem": "Reels 影片", "quoteAmount": null, "expectedDeadline": "9/10", "submissionDeadline": "9/10", "publishDeadline": "9/15", "nextAction": "提供報價", "requiredMaterials": [], "intent": "詢價", "missingFields": ["quote_amount"]}
+  },
+  {
+    "id": "deadline-submission-only-022",
+    "category": "deadline_semantics",
+    "senderName": "紙月設計",
+    "receivedAt": "2026-08-31T00:00:00+08:00",
+    "text": "Logo 修改稿請 9/12 前交給我們，費用 12000。",
+    "expected": {"clientName": "紙月設計", "projectItem": "Logo", "quoteAmount": 12000, "expectedDeadline": "9/12", "submissionDeadline": "9/12", "publishDeadline": null, "nextAction": "準備／提交初稿", "requiredMaterials": [], "intent": "修改需求", "missingFields": []}
+  },
+  {
+    "id": "deadline-publish-only-023",
+    "category": "deadline_semantics",
+    "senderName": "Mori Select",
+    "text": "影片希望 10 月底發布，預算 30000。",
+    "expected": {"clientName": "Mori Select", "projectItem": "影片", "quoteAmount": 30000, "expectedDeadline": "10/31", "submissionDeadline": null, "publishDeadline": "10/31", "nextAction": null, "requiredMaterials": [], "intent": "一般訊息", "missingFields": []}
+  },
+  {
+    "id": "deadline-generic-024",
+    "category": "deadline_semantics",
+    "senderName": "晴天行銷",
+    "text": "希望 9/15 前完成官網設計，預算 120000。",
+    "expected": {"clientName": "晴天行銷", "projectItem": "官網設計", "quoteAmount": 120000, "expectedDeadline": "9/15", "submissionDeadline": null, "publishDeadline": null, "nextAction": null, "requiredMaterials": [], "intent": "一般訊息", "missingFields": []}
+  },
+  {
+    "id": "deadline-relative-friday-025",
+    "category": "deadline_semantics",
+    "senderName": "小島咖啡",
+    "receivedAt": "2026-08-31T00:00:00+08:00",
+    "text": "這週五前給腳本，短影音預算 20000。",
+    "expected": {"clientName": "小島咖啡", "projectItem": "短影音", "quoteAmount": 20000, "expectedDeadline": "9/4", "submissionDeadline": "9/4", "publishDeadline": null, "nextAction": null, "requiredMaterials": [], "intent": "一般訊息", "missingFields": []}
+  },
+  {
+    "id": "next-action-quote-026",
+    "category": "next_action",
+    "senderName": "慢慢選物",
+    "text": "想做社群貼文 6 張，請提供報價。",
+    "expected": {"clientName": "慢慢選物", "projectItem": "社群貼文", "quoteAmount": null, "expectedDeadline": null, "submissionDeadline": null, "publishDeadline": null, "nextAction": "提供報價", "requiredMaterials": [], "intent": "詢價", "missingFields": ["quote_amount", "expected_deadline"]}
+  },
+  {
+    "id": "materials-waiting-027",
+    "category": "required_materials",
+    "senderName": "森木科技",
+    "text": "產品攝影確認合作，請提供產品圖片、商品連結和 brief，收到後安排拍攝。",
+    "expected": {"clientName": "森木科技", "projectItem": "產品攝影", "quoteAmount": null, "expectedDeadline": null, "submissionDeadline": null, "publishDeadline": null, "nextAction": "等待客戶提供素材", "requiredMaterials": ["產品圖片", "商品連結", "brief"], "intent": "確認合作", "missingFields": ["quote_amount", "expected_deadline"]}
+  },
+  {
+    "id": "materials-logo-provided-028",
+    "category": "required_materials",
+    "senderName": "沐白茶室",
+    "text": "附件提供 Logo，包裝設計還需要文案，預算 35000，9/20 前完稿。",
+    "expected": {"clientName": "沐白茶室", "projectItem": "包裝設計", "quoteAmount": 35000, "expectedDeadline": "9/20", "submissionDeadline": "9/20", "publishDeadline": null, "nextAction": "等待客戶提供素材", "requiredMaterials": ["文案"], "intent": "一般訊息", "missingFields": []}
+  },
+  {
+    "id": "completed-no-next-action-029",
+    "category": "next_action",
+    "senderName": "遠嶼科技",
+    "text": "官網設計已完成，尾款也收到，謝謝。",
+    "expected": {"clientName": "遠嶼科技", "projectItem": "官網設計", "quoteAmount": null, "expectedDeadline": null, "submissionDeadline": null, "publishDeadline": null, "nextAction": null, "requiredMaterials": [], "intent": "一般訊息", "missingFields": ["quote_amount", "expected_deadline"]}
+  }
+]
