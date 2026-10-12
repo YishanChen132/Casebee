@@ -65,6 +65,24 @@
 - `npm run build`: passed.
 - `npm run smoke`: passed.
 
+## 2026-10-12 - P3 Hybrid Search Freeze and Diagnostics
+
+### Completed
+- Kept the current deterministic Hybrid Search architecture frozen: keyword/token overlap, project aliases, phrase groups, case type, and amount proximity.
+- Did not introduce embeddings, vector search, or cross-thread case linking yet.
+- Added `scoreBreakdown` diagnostics to RAG examples returned by search so similar-case ranking can be inspected without changing behavior.
+- Added smoke coverage to ensure RAG search exposes score breakdown while P2 fact guardrails remain active.
+
+### Decision
+- Search optimization is not the current bottleneck after P0-P2. Same-thread/existing-case context and typed extraction rules provide the measurable accuracy gains.
+- Vector/embedding search should wait until a targeted retrieval fixture proves the correct historical context exists but deterministic search fails to retrieve it.
+
+### Verification
+- `npm run accuracy`: passed; RAG before/after fact-field delta `0`, thread context RAG-on `1.000`.
+- `npm run type-check`: passed.
+- `npm run build`: passed.
+- `npm run smoke`: passed.
+
 ## 2026-08-04 - Documentation Baseline
 
 ### Completed

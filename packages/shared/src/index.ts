@@ -321,6 +321,7 @@ export interface RagExample {
   quoteRangeMax: number | null;
   successPattern: string | null;
   score: number;
+  scoreBreakdown?: Record<string, number>;
 }
 
 export interface CreateRagExampleInput {

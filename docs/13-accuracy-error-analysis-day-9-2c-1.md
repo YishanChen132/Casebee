@@ -345,3 +345,22 @@ Validation result:
 - Thread current-only RAG before/after fact-field delta is `0`.
 - Thread context RAG-on remains `1.000`.
 - Development ragOff full overall is `0.918`; extended overall remains `0.920`.
+
+## P3 Hybrid Search Result
+
+Decision:
+
+- Freeze the main Hybrid Search architecture for now.
+- Current search remains deterministic: project/alias match, phrase group match, token overlap, case type compatibility, and quote-amount proximity.
+- Do not add embeddings/vector search yet because P0-P2 removed RAG as a source of case facts and the measured RAG fact-field delta is now `0`.
+
+Implemented P3 diagnostic improvement:
+
+- RAG search results now include optional `scoreBreakdown` metadata showing why an example ranked: e.g. `projectExact`, `alias`, `mediaPhrase`, `websitePhrase`, `phraseGroup`, `tokenOverlap`, `caseType`, `amountProximity`.
+- Smoke now asserts score breakdown is exposed for similar-case retrieval.
+
+Current P3 status:
+
+- Hybrid Search is useful for reply/supporting context, not authoritative fact extraction.
+- Cross-thread/cross-case linking remains intentionally deferred until a targeted fixture proves retrieval failure is the bottleneck.
+- P3 is complete as a freeze-and-diagnose step, not as a vector-search rewrite.

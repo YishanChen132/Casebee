@@ -248,6 +248,7 @@ async function main() {
   assert(ragAssisted.extraction.projectItem === ragOff.extraction.projectItem, 'Expected RAG not to override current-message project item facts.');
   assert(JSON.stringify(ragAssisted.extraction.missingFields) === JSON.stringify(ragOff.extraction.missingFields), 'Expected RAG not to add missing fields as current-case facts.');
   assert(ragAssisted.extraction.suggestedReply.includes('過去成功做法'), 'Expected structured RAG metadata to influence suggested reply.');
+  assert(Object.keys(ragAssisted.similarCases[0]?.scoreBreakdown ?? {}).length > 0, 'Expected RAG search to expose score breakdown diagnostics.');
 
   const reanalysisImport = await importMessage({
     platform: 'Gmail',
