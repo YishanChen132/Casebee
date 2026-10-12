@@ -1,0 +1,58 @@
+[
+  {
+    "id": "p4-noncase-calendar-001",
+    "category": "calendar_invite",
+    "senderName": "Google Calendar",
+    "text": "Subject: 邀請：品牌週會\n\n你受邀參加 2026/9/3 上午 10:00 的 Google Calendar 會議。",
+    "expectedClassification": "calendar_invite"
+  },
+  {
+    "id": "p4-noncase-newsletter-002",
+    "category": "newsletter",
+    "senderName": "Design Weekly",
+    "text": "本週設計靈感 newsletter，點此取消訂閱 unsubscribe。",
+    "expectedClassification": "newsletter"
+  },
+  {
+    "id": "p4-noncase-security-003",
+    "category": "system_notification",
+    "senderName": "Google",
+    "text": "你的 Google 驗證碼是 445566，請勿提供給任何人。",
+    "expectedClassification": "system_notification"
+  },
+  {
+    "id": "p4-noncase-announcement-004",
+    "category": "announcement",
+    "senderName": "北科大 活動中心",
+    "text": "第一屆金融科技獎競賽入圍公告，請入圍團隊於期限內完成報名資料。",
+    "expectedClassification": "announcement"
+  },
+  {
+    "id": "p4-case-collab-005",
+    "category": "case_candidate",
+    "senderName": "LumiNote Amy",
+    "text": "Subject: 合作邀約\n\n我們想邀請你拍一支 Reels 宣傳影片，預計 9/15 上線。",
+    "expectedClassification": "collaboration_invite"
+  },
+  {
+    "id": "p4-case-quote-006",
+    "category": "case_candidate",
+    "senderName": "晴天行銷",
+    "text": "想詢問官網設計報價，預算大約 120,000 元，希望 10/20 前完成。",
+    "expectedClassification": "quote_inquiry"
+  },
+  {
+    "id": "p4-case-risk-007",
+    "category": "case_candidate",
+    "senderName": "森木科技",
+    "text": "產品攝影素材下週才能給你，原本後天交件可能來不及，需要延後。",
+    "expectedClassification": "deadline_or_material_risk"
+  },
+  {
+    "id": "p4-case-confirm-008",
+    "category": "case_candidate",
+    "senderName": "遠嶼科技",
+    "text": "網站重新設計確認可以合作，請先提供合約與首付款資訊。",
+    "expectedClassification": "confirmation_or_contract"
+  }
+]

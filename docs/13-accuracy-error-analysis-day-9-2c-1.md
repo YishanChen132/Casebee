@@ -364,3 +364,24 @@ Current P3 status:
 - Hybrid Search is useful for reply/supporting context, not authoritative fact extraction.
 - Cross-thread/cross-case linking remains intentionally deferred until a targeted fixture proves retrieval failure is the bottleneck.
 - P3 is complete as a freeze-and-diagnose step, not as a vector-search rewrite.
+
+## P4 Preflight Checklist
+
+Completed before starting P4 implementation:
+
+- P0-P3 commit baseline preserved at `b5848ed Add hybrid search diagnostics`.
+- Latest P0-P3 accuracy output preserved at `tool_12f53cefc0014pZio2a2VSmy4M`.
+- Existing classification entry points confirmed:
+  - `messageClassifier.ts`: used by extraction accuracy and `analyzeMessage`.
+  - `gmailService.ts`: Gmail import triage for verification codes, calendar invites, no-reply/automated mail, newsletters, and announcements.
+- Current non-case main fixtures cover calendar invite, newsletter, system notification, announcement, and security-code holdout.
+- Latest residual extraction errors are not classification-driven. Main error concentration is `nextAction`, `missingFields`, then `intent`.
+- Added independent P4 classification fixture set and script:
+  - Fixture: `apps/api/src/fixtures/classification/p4-classification-fixtures.json`.
+  - Script: `npm run classification:p4 --workspace @casebee/api`.
+  - Scope: classifier only; no RAG, Hybrid Search, thread context, or extraction mutation.
+
+P4 preflight result:
+
+- P4 classification baseline: `8/8`, accuracy `1.000`.
+- `npm run type-check`: passed.

@@ -83,6 +83,21 @@
 - `npm run build`: passed.
 - `npm run smoke`: passed.
 
+## 2026-10-12 - P4 Preflight Classification Baseline
+
+### Completed
+- Preserved the P0-P3 commit baseline at `b5848ed Add hybrid search diagnostics`.
+- Confirmed classification entry points:
+  - `messageClassifier.ts` handles extraction accuracy and `analyzeMessage` classification.
+  - `gmailService.ts` has a separate Gmail import triage path for non-case filtering.
+- Reviewed current non-case fixtures: calendar invite, newsletter, system/security notification, and announcement.
+- Confirmed latest accuracy residual errors are concentrated in `nextAction`, `missingFields`, and `intent`; classification currently has no errors in the main fixture set.
+- Added P4-only classification fixtures and `classification:p4` script that tests classifier behavior without invoking RAG, Hybrid Search, or extraction.
+
+### Verification
+- `npm run classification:p4 --workspace @casebee/api`: passed, 8/8, accuracy `1.000`.
+- `npm run type-check`: passed.
+
 ## 2026-08-04 - Documentation Baseline
 
 ### Completed
