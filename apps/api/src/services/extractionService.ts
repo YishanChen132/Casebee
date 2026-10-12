@@ -405,8 +405,11 @@ function buildSuggestedReply(input: {clientName: string; text: string; intent: s
       input.quoteAmount ? `預算約 NT$ ${input.quoteAmount.toLocaleString('zh-TW')}` : null,
       input.expectedDeadline ? `預期時間是 ${input.expectedDeadline}` : null,
     ].filter(Boolean).join('，');
+    const rangeText = bestExample && bestExample.score >= 40 && bestExample.quoteRangeMin && bestExample.quoteRangeMax
+      ? `依類似專案的經驗，報價範圍約 NT$ ${bestExample.quoteRangeMin.toLocaleString('zh-TW')}–${bestExample.quoteRangeMax.toLocaleString('zh-TW')}。`
+      : '';
 
-    return `您好，謝謝您的詢問。${knownParts ? `我目前理解 ${knownParts}。` : ''}${input.missingFields.length > 0 ? `想再確認 ${formatMissingFields(input.missingFields)}，` : ''}確認後我會整理報價與可執行範圍給您。${successText}`;
+    return `您好，謝謝您的詢問。${knownParts ? `我目前理解 ${knownParts}。` : ''}${rangeText}${input.missingFields.length > 0 ? `想再確認 ${formatMissingFields(input.missingFields)}，` : ''}確認後我會整理報價與可執行範圍給您。${successText}`;
   }
 
   if (input.intent === '修改需求') {

@@ -147,6 +147,7 @@ async function main() {
       input: {
         senderName: '小島咖啡',
         text: 'Logo 想再修改一下，順便追加一張菜單 Banner，月底前可以完成嗎？',
+        receivedAt: '2026-08-31T00:00:00+08:00',
       },
       expected: {clientName: '小島咖啡', projectItem: 'Logo', quoteAmount: null, expectedDeadline: '8/31', intent: '修改需求'},
     },
@@ -155,6 +156,7 @@ async function main() {
       input: {
         senderName: '森木科技',
         text: '產品攝影素材下週才能給你，原本後天交件可能來不及，需要延後。',
+        receivedAt: '2026-08-31T00:00:00+08:00',
       },
       expected: {clientName: '森木科技', projectItem: '產品攝影', quoteAmount: null, expectedDeadline: '9/2', intent: '交期風險'},
     },

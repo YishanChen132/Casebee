@@ -1,5 +1,17 @@
 # Development Log
 
+## 2026-10-12 - RAG Reply and Rule Context Integration
+
+### Completed
+- Added RAG quote-range support to inquiry reply drafts when a high-scoring similar case has `quoteRangeMin` and `quoteRangeMax`.
+- Kept existing RAG reply quality by preserving historical-case references and `successPattern` text.
+- Updated rule context generation to strip `相似案例：...` summary fragments before scanning alert keywords, avoiding RAG text causing false rule alerts.
+- Stabilized smoke relative-date fixtures by pinning `receivedAt` for `月底` and `後天` cases.
+
+### Decisions
+- Did not change RAG retrieval scoring, storage schema, LINE integration, or LINE webhook behavior.
+- Kept the change isolated to RAG-assisted replies and rule-context sanitation so it does not conflict with future LINE login or LINE message integration work.
+
 ## 2026-08-04 - Documentation Baseline
 
 ### Completed
