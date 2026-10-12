@@ -76,8 +76,8 @@ function buildFieldConfidence(extraction: AiExtraction, result: ThreadAwareExtra
   };
 }
 
-export async function analyzeThreadAwareMessage(input: {senderName: string; text: string; receivedAt?: string; threadMessages?: MessageEvent[]; existingCase?: CaseRecord | null}): Promise<{result: ThreadAwareExtractionResult; modelName: string; overallConfidence: number; fieldConfidence: Record<string, number>; warnings: string[]}> {
-  const {extraction: currentExtraction, modelName, validation} = await analyzeMessage({senderName: input.senderName, text: input.text, receivedAt: input.receivedAt});
+export async function analyzeThreadAwareMessage(input: {senderName: string; text: string; receivedAt?: string; threadMessages?: MessageEvent[]; existingCase?: CaseRecord | null; ragEnabled?: boolean}): Promise<{result: ThreadAwareExtractionResult; modelName: string; overallConfidence: number; fieldConfidence: Record<string, number>; warnings: string[]}> {
+  const {extraction: currentExtraction, modelName, validation} = await analyzeMessage({senderName: input.senderName, text: input.text, receivedAt: input.receivedAt, ragEnabled: input.ragEnabled});
   const existingExtraction = input.existingCase ? extractionFromCase(input.existingCase) : null;
   const finalExtraction: AiExtraction = {...currentExtraction, missingFields: [...currentExtraction.missingFields]};
   const extractedFields: Partial<AiExtraction> = {};

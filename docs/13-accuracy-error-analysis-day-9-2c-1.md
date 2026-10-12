@@ -233,3 +233,57 @@ Remaining issues were not converted into fixture expectations because they refle
 - `requiredMaterials` still overmatches `產品` or `品牌 Logo` when the text describes a project type or deliverable rather than pending client material.
 - RAG can still over-specialize project items, such as `影片` becoming `Reels 影片`.
 - `thread-one-of-two-deadlines-conflict` still reports `expectedDeadline` as changed/conflicting when only `publishDeadline` changed; under the compatibility rule, `expectedDeadline` should remain tied to `submissionDeadline` when both typed deadlines exist.
+
+## Day 9-2C-3 Search/RAG vs Extraction Diagnosis
+
+Scope: diagnosis and evaluator instrumentation. Hybrid Search was not changed.
+
+Question: weak post-search field mapping should be attributed to search architecture, RAG, thread context, or extraction/schema rules.
+
+Evaluator changes:
+
+- `analyzeMessage` and `analyzeThreadAwareMessage` now accept optional `ragEnabled`; default behavior remains RAG-enabled.
+- Thread accuracy now reports four modes:
+- `currentOnlyRagOff`: current message only, no RAG.
+- `currentOnlyRagOn`: current message only, with RAG.
+- `threadContextRagOff`: existing case/thread inheritance, no RAG.
+- `threadContextRagOn`: existing case/thread inheritance, with RAG.
+
+Current Day 9 accuracy findings:
+
+- Development RAG-on `fullOverall`: `0.898`.
+- Development RAG-on weakest fields: `nextAction` exact `0.64`, `missingFields` exact set `0.72`, `intent` `0.84`, `submissionDeadline` `0.88`.
+- Top error causes: `nextAction` false positives, missingFields exact-set mismatches, typed deadline classification, material overmatch.
+- RAG on/off for development improves full overall by only `+0.016`; it improves `missingFields` by `+0.20` but slightly hurts `projectItem` by `-0.04`.
+- Holdout RAG on/off improves full overall by `+0.073`, mostly through `projectItem` and `missingFields`.
+
+Thread A/B/C/D results:
+
+| Mode | Full Overall | Legacy Core | Extended | Interpretation |
+| --- | ---: | ---: | ---: | --- |
+| currentOnlyRagOff | 0.578 | 0.480 | 0.750 | Current message alone lacks inherited case fields. |
+| currentOnlyRagOn | 0.600 | 0.480 | 0.750 | RAG helps current-only only slightly. |
+| threadContextRagOff | 0.938 | 1.000 | 1.000 | Thread/existing-case context solves most field mapping gaps. |
+| threadContextRagOn | 0.954 | 1.000 | 1.000 | RAG adds only a small thread-level improvement. |
+
+Delta interpretation:
+
+- Current-only RAG gain: `+0.022` overall, mainly `projectItem +0.20`.
+- Thread context gain over current-only RAG: `+0.354` overall, with major gains in `projectItem +0.80`, `quoteAmount +0.80`, `expectedDeadline +1.00`, `submissionDeadline +0.40`, `publishDeadline +0.40`, and `nextAction +0.20`.
+- Thread-context RAG gain: `+0.016` overall, mainly inherited-field bookkeeping, not core scalar extraction.
+
+Diagnosis:
+
+- This is not primarily a Hybrid Search problem yet. Search/RAG retrieval can help, but the biggest observed gap is that current-message extraction cannot reconstruct existing case state without thread/existing-case context.
+- RAG improves some missing-field and project-item cases, but also introduces project-item over-specificity and can add `required_materials` through typical missing fields.
+- The weak mapping after search is mainly an extraction/schema/thread-context problem: when context exists, the system needs stricter rules for which fields may be inherited, changed, conflicted, or ignored.
+- Hybrid Search should be revisited only after extraction/schema/thread mapping is tightened and after a test shows that the needed context exists but retrieval fails to find it.
+
+Recommended next order:
+
+1. Tighten `nextAction` extraction/inference rules to reduce false positives.
+2. Tighten typed deadline rules for explicit first-version/submission phrases and compatibility handling when only `publishDeadline` changes.
+3. Tighten `requiredMaterials` so project types and provided assets do not become pending materials.
+4. Update thread context mapping so `expectedDeadline` compatibility does not create false changed/conflicting fields when submission remains the controlling deadline.
+5. Then evaluate RAG retrieval quality with targeted fixtures where the correct context exists only in historical examples.
+6. Only after step 5 should Hybrid Search or embedding/vector retrieval be changed.

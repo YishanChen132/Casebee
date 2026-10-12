@@ -7,11 +7,12 @@ import {extractMessage} from '../services/extractionService.js';
 import {validateExtraction} from '../services/extractionValidator.js';
 import {classifyPreparedMessage, type MessageType} from '../services/messageClassifier.js';
 import {findSimilarCasesForText} from '../services/ragService.js';
+import {analyzeMessage} from '../services/aiService.js';
 import {analyzeThreadAwareMessage} from '../services/threadContextService.js';
 
 type ExpectedExtraction = Pick<AiExtraction, 'clientName' | 'projectItem' | 'quoteAmount' | 'expectedDeadline' | 'submissionDeadline' | 'publishDeadline' | 'nextAction' | 'requiredMaterials' | 'intent' | 'missingFields'>;
 type DatasetName = 'development' | 'holdout' | 'thread';
-type RagMode = 'rag_on' | 'rag_off' | 'thread_context';
+type RagMode = 'rag_on' | 'rag_off' | 'thread_current_rag_off' | 'thread_current_rag_on' | 'thread_context_rag_off' | 'thread_context_rag_on' | 'thread_context';
 type NormalizedErrorType = 'false_positive' | 'false_negative' | 'wrong_value' | 'normalization_mismatch' | 'evaluation_mismatch' | 'thread_inheritance_error' | 'RAG_interference' | 'rule_engine_interference';
 
 interface ExtractionFixture {
@@ -404,20 +405,32 @@ function accuracyForFields(results: FieldResult[], fieldSet: Set<string>) {
   };
 }
 
-async function runThreadFixture(fixture: ThreadFixture) {
+function compareThreadExtraction(fixture: ThreadFixture, extraction: AiExtraction) {
+  const fields: FieldResult[] = [];
+
+  for (const field of ['clientName', 'projectItem', 'quoteAmount', 'expectedDeadline', 'submissionDeadline', 'publishDeadline', 'nextAction', 'intent'] as const) {
+    fields.push(compareScalar(field, {...fixture.expected, missingFields: []}, extraction));
+  }
+  fields.push(compareStringSet('requiredMaterials', fixture.expected.requiredMaterials ?? [], extraction.requiredMaterials));
+  return fields;
+}
+
+async function runThreadCurrentFixture(fixture: ThreadFixture, ragEnabled: boolean) {
+  const current = fixture.messages[fixture.messages.length - 1];
+  const analyzed = await analyzeMessage({senderName: current.senderName, text: current.text, ragEnabled});
+  return {fixture, extraction: analyzed.extraction, similarCases: analyzed.similarCases, fields: compareThreadExtraction(fixture, analyzed.extraction)};
+}
+
+async function runThreadFixture(fixture: ThreadFixture, ragEnabled = true) {
   const current = fixture.messages[fixture.messages.length - 1];
   const {result} = await analyzeThreadAwareMessage({
     senderName: current.senderName,
     text: current.text,
     threadMessages: makeThreadMessages(fixture),
     existingCase: makeCaseRecord(fixture),
+    ragEnabled,
   });
-  const fields: FieldResult[] = [];
-
-  for (const field of ['clientName', 'projectItem', 'quoteAmount', 'expectedDeadline', 'submissionDeadline', 'publishDeadline', 'nextAction', 'intent'] as const) {
-    fields.push(compareScalar(field, {...fixture.expected, missingFields: []}, result.extraction));
-  }
-  fields.push(compareStringSet('requiredMaterials', fixture.expected.requiredMaterials ?? [], result.extraction.requiredMaterials));
+  const fields: FieldResult[] = compareThreadExtraction(fixture, result.extraction);
   fields.push(compareStringSet('inheritedFields', fixture.expected.inheritedFields, fieldNames(result.inheritedFields)));
   fields.push(compareStringSet('changedFields', fixture.expected.changedFields, fieldNames(result.changedFields)));
   fields.push(compareStringSet('conflictingFields', fixture.expected.conflictingFields, result.conflictingFields.map((field) => field.field).sort()));
@@ -531,16 +544,32 @@ async function runExtractionDataset(path: string) {
 
 async function runThreadDataset() {
   const fixtures = JSON.parse(await readFile(threadFixturePath, 'utf8')) as ThreadFixture[];
-  const runs = [];
+  const currentRagOffRuns = [];
+  const currentRagOnRuns = [];
+  const contextRagOffRuns = [];
+  const contextRagOnRuns = [];
   for (const fixture of fixtures) {
-    runs.push(await runThreadFixture(fixture));
+    currentRagOffRuns.push(await runThreadCurrentFixture(fixture, false));
+    currentRagOnRuns.push(await runThreadCurrentFixture(fixture, true));
+    contextRagOffRuns.push(await runThreadFixture(fixture, false));
+    contextRagOnRuns.push(await runThreadFixture(fixture, true));
   }
-  const summary = summarize(runs, {dataset: 'thread', ragMode: 'thread_context'});
+  const currentOnlyRagOff = summarize(currentRagOffRuns, {dataset: 'thread', ragMode: 'thread_current_rag_off'});
+  const currentOnlyRagOn = summarize(currentRagOnRuns, {dataset: 'thread', ragMode: 'thread_current_rag_on', pairedRuns: currentRagOffRuns});
+  const threadContextRagOff = summarize(contextRagOffRuns, {dataset: 'thread', ragMode: 'thread_context_rag_off'});
+  const threadContextRagOn = summarize(contextRagOnRuns, {dataset: 'thread', ragMode: 'thread_context_rag_on', pairedRuns: contextRagOffRuns});
   return {
     fixtureCount: fixtures.length,
-    ...summary,
-    needsHumanReviewCount: runs.filter((run) => run.result.needsHumanReview).length,
-    conflicts: runs.flatMap((run) => run.result.conflictingFields.map((field) => ({fixture: run.fixture.id, ...field}))),
+    currentOnlyRagOff,
+    currentOnlyRagOn,
+    threadContextRagOff,
+    threadContextRagOn,
+    currentRagBeforeAfter: compareRag(currentOnlyRagOff, currentOnlyRagOn),
+    threadContextBeforeAfter: compareRag(threadContextRagOff, threadContextRagOn),
+    threadContextGainOverCurrent: compareRag(currentOnlyRagOn, threadContextRagOn),
+    ...threadContextRagOn,
+    needsHumanReviewCount: contextRagOnRuns.filter((run) => run.result.needsHumanReview).length,
+    conflicts: contextRagOnRuns.flatMap((run) => run.result.conflictingFields.map((field) => ({fixture: run.fixture.id, ...field}))),
   };
 }
 
@@ -574,7 +603,7 @@ async function main() {
       directlyComparableWithPreviousOverallAccuracy: false,
       reason: 'Day 9-2B-2 added scored fields for submissionDeadline, publishDeadline, nextAction, and requiredMaterials and expanded development/thread fixtures, so the denominator and task difficulty changed.',
     },
-    errorOverview: errorOverview([development, holdout, thread]),
+    errorOverview: errorOverview([development, holdout, {detailedErrors: thread.threadContextRagOn.detailedErrors}]),
     development,
     holdout,
     thread,
