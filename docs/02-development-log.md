@@ -98,6 +98,25 @@
 - `npm run classification:p4 --workspace @casebee/api`: passed, 8/8, accuracy `1.000`.
 - `npm run type-check`: passed.
 
+## 2026-10-12 - P4 Non-Case Exclusion Hardening
+
+### Completed
+- Expanded P4 classification fixtures from simple type accuracy to bucket-level outcomes: `NON_CASE`, `CASE_RELATED`, and `UNCERTAIN`.
+- Added high-risk non-case fixtures for school recommendation/application notices, shopping/order notifications, and account verification messages.
+- Added explicit case-related coverage for collaboration invites, quote inquiries, deadline/material risk, confirmation/contract messages, and delivery/revision messages.
+- Added ambiguous-message coverage for short cooperation/open-ended replies that should stay uncertain without thread context.
+- Strengthened existing classifier rules and Gmail triage for school/application notices and order/transaction notifications before revision/quote rules run.
+
+### Verification
+- `npm run classification:p4 --workspace @casebee/api`: passed, 14/14, accuracy `1.000`.
+- P4 non-case false case rate: `0.000`.
+- P4 case-related miss rate: `0.000`.
+- P4 uncertain over-create rate: `0.000`.
+- `npm run accuracy`: passed; development full overall `0.918`, classification `1.000`, thread context RAG-on `1.000`.
+- `npm run type-check`: passed.
+- `npm run build`: passed.
+- `npm run smoke`: passed.
+
 ## 2026-08-04 - Documentation Baseline
 
 ### Completed

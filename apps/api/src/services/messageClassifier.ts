@@ -26,14 +26,20 @@ export function classifyPreparedMessage(prepared: PreprocessedEmail): MessageCla
   const text = prepared.cleanText.toLowerCase();
   const reasons: string[] = [];
 
+  if (has(text, /驗證碼|security code|verification code|otp|登入代碼|two-factor|2fa|authentication/i)) {
+    return {type: 'system_notification', confidence: 0.9, reasons: ['verification marker']};
+  }
+  if (has(text, /訂單|出貨|配送|收件資料|會員中心|付款完成|交易明細|發票|物流|tracking number|order confirmation/i)) {
+    return {type: 'system_notification', confidence: 0.88, reasons: ['transaction/order marker']};
+  }
+  if (has(text, /推薦信|申請資料|申請文件|補件|教務處|招生|研究所申請|入學申請|admission|application portal/i)) {
+    return {type: 'announcement', confidence: 0.86, reasons: ['school/application notice marker']};
+  }
   if (has(text, /google calendar|邀請：|calendar event|會議邀請/i)) {
     return {type: 'calendar_invite', confidence: 0.92, reasons: ['calendar marker']};
   }
   if (has(text, /unsubscribe|取消訂閱|newsletter|edm/i)) {
     return {type: 'newsletter', confidence: 0.9, reasons: ['newsletter marker']};
-  }
-  if (has(text, /驗證碼|security code|verification code|otp|登入代碼|two-factor|2fa|authentication/i)) {
-    return {type: 'system_notification', confidence: 0.9, reasons: ['verification marker']};
   }
   if (has(text, /競賽|徵件|報名|入圍|公告|活動通知|賽務|獎金獵人/i)) {
     return {type: 'announcement', confidence: 0.82, reasons: ['announcement terms']};

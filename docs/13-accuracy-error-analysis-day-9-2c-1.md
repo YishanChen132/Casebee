@@ -385,3 +385,31 @@ P4 preflight result:
 
 - P4 classification baseline: `8/8`, accuracy `1.000`.
 - `npm run type-check`: passed.
+
+## P4 Non-Case Exclusion Result
+
+Goal:
+
+- Reduce non-case false case creation, especially realistic non-commercial mail that still contains deadlines, documents, and tasks.
+- Preserve true cooperation/inquiry detection so real collaboration invites are not missed.
+- Keep ambiguous messages uncertain unless thread context can disambiguate them.
+
+Implemented fixture buckets:
+
+- `NON_CASE`: calendar invite, newsletter, account verification, school recommendation/application notice, shopping/order notification, announcement.
+- `CASE_RELATED`: collaboration invite, quote inquiry, deadline/material risk, confirmation/contract, delivery/revision message.
+- `UNCERTAIN`: vague cooperation opener and short acknowledgement.
+
+Implemented classifier/triage hardening:
+
+- School/application notices are classified as non-case announcements before case rules.
+- Order/transaction notifications are classified as system notifications before revision rules, preventing phrases like `修改收件資料` from becoming `revision_request`.
+- Gmail triage mirrors these exclusions so imported Gmail messages are less likely to create cases for administrative or transactional mail.
+
+Validation result:
+
+- P4 classification fixtures: `14/14`, accuracy `1.000`.
+- Non-case false case rate: `0.000`.
+- Case-related miss rate: `0.000`.
+- Uncertain over-create rate: `0.000`.
+- Main extraction regression remains stable: development full overall `0.918`, classification `1.000`, thread context RAG-on `1.000`.
