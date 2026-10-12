@@ -26,7 +26,7 @@ interface ExtractionFixture {
 }
 
 interface FieldResult {
-  field: keyof ExpectedExtraction | 'classification' | 'inheritedFields' | 'changedFields' | 'conflictingFields' | 'needsHumanReview';
+  field: keyof ExpectedExtraction | 'classification' | 'inheritedFields' | 'changedFields' | 'clearedFields' | 'conflictingFields' | 'fieldSources' | 'needsHumanReview';
   passed: boolean;
   expected: unknown;
   actual: unknown;
@@ -55,7 +55,9 @@ interface ThreadFixture {
   expected: Pick<AiExtraction, 'clientName' | 'projectItem' | 'quoteAmount' | 'expectedDeadline' | 'submissionDeadline' | 'publishDeadline' | 'nextAction' | 'requiredMaterials' | 'intent'> & {
     inheritedFields: string[];
     changedFields: string[];
+    clearedFields?: string[];
     conflictingFields: string[];
+    fieldSources?: Record<string, string>;
     needsHumanReview: boolean;
   };
 }
@@ -129,7 +131,7 @@ function actionCategory(value: unknown) {
 
 function normalizedErrorType(result: FieldResult, pairedPassed?: boolean): NormalizedErrorType {
   if (pairedPassed) return 'RAG_interference';
-  if (result.field === 'inheritedFields' || result.field === 'changedFields' || result.field === 'conflictingFields') return 'thread_inheritance_error';
+  if (result.field === 'inheritedFields' || result.field === 'changedFields' || result.field === 'clearedFields' || result.field === 'conflictingFields' || result.field === 'fieldSources') return 'thread_inheritance_error';
   if (result.errorType === 'extra_fields' || result.errorType === 'false_positive') return 'false_positive';
   if (result.errorType === 'missing_required_fields' || result.errorType === 'missing') return 'false_negative';
   if (result.field === 'expectedDeadline' || result.field === 'submissionDeadline' || result.field === 'publishDeadline') {
@@ -144,7 +146,7 @@ function normalizedErrorType(result: FieldResult, pairedPassed?: boolean): Norma
 
 function possibleCause(result: FieldResult, run: Awaited<ReturnType<typeof runFixture>> | Awaited<ReturnType<typeof runThreadFixture>>, dataset: DatasetName, ragMode: RagMode, pairedPassed?: boolean) {
   if (pairedPassed) return 'RAG-on differs from RAG-off and introduced this field mismatch.';
-  if (dataset === 'thread' || result.field === 'inheritedFields' || result.field === 'changedFields' || result.field === 'conflictingFields') return 'Thread context inheritance/conflict expectation differs from current comparison output.';
+  if (dataset === 'thread' || result.field === 'inheritedFields' || result.field === 'changedFields' || result.field === 'clearedFields' || result.field === 'conflictingFields' || result.field === 'fieldSources') return 'Thread context inheritance/conflict expectation differs from current comparison output.';
   if (result.field === 'nextAction') return 'Exact nextAction string evaluation may be stricter than action semantics; compare category metrics before changing extraction.';
   if (result.field === 'missingFields') return 'MissingFields exact-set scoring hides partial matches; inspect missing/extra fields and field-level F1.';
   if (result.field === 'expectedDeadline') return 'Could be expectedDeadline compatibility strategy, relative-date normalization, or fixture natural-language/date-format mismatch.';
@@ -306,6 +308,10 @@ function compareStringSet(field: FieldResult['field'], expected: string[], actua
   return {field, passed, expected, actual, errorType: passed ? null : missing.length > 0 && extra.length > 0 ? 'missing_and_extra_fields' : missing.length > 0 ? 'missing_required_fields' : 'extra_fields'};
 }
 
+function sourcePairs(value: Record<string, unknown> | undefined) {
+  return Object.entries(value ?? {}).map(([field, source]) => `${field}:${String(source)}`).sort();
+}
+
 function compareScalar(field: keyof Omit<ExpectedExtraction, 'missingFields' | 'requiredMaterials'>, expected: ExpectedExtraction, actual: AiExtraction, receivedAt?: string): FieldResult {
   const expectedValue = expected[field] ?? null;
   const actualValue = actual[field];
@@ -433,7 +439,11 @@ async function runThreadFixture(fixture: ThreadFixture, ragEnabled = true) {
   const fields: FieldResult[] = compareThreadExtraction(fixture, result.extraction);
   fields.push(compareStringSet('inheritedFields', fixture.expected.inheritedFields, fieldNames(result.inheritedFields)));
   fields.push(compareStringSet('changedFields', fixture.expected.changedFields, fieldNames(result.changedFields)));
+  fields.push(compareStringSet('clearedFields', fixture.expected.clearedFields ?? [], fieldNames(result.clearedFields)));
   fields.push(compareStringSet('conflictingFields', fixture.expected.conflictingFields, result.conflictingFields.map((field) => field.field).sort()));
+  if (fixture.expected.fieldSources) {
+    fields.push(compareStringSet('fieldSources', sourcePairs(fixture.expected.fieldSources), sourcePairs(result.fieldSources)));
+  }
   fields.push({field: 'needsHumanReview', passed: result.needsHumanReview === fixture.expected.needsHumanReview, expected: fixture.expected.needsHumanReview, actual: result.needsHumanReview, errorType: result.needsHumanReview === fixture.expected.needsHumanReview ? null : 'human_review_mismatch'});
 
   return {fixture, result, fields};

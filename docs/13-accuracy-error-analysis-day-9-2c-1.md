@@ -287,3 +287,27 @@ Recommended next order:
 4. Update thread context mapping so `expectedDeadline` compatibility does not create false changed/conflicting fields when submission remains the controlling deadline.
 5. Then evaluate RAG retrieval quality with targeted fixtures where the correct context exists only in historical examples.
 6. Only after step 5 should Hybrid Search or embedding/vector retrieval be changed.
+
+## P0-P3 Field Mapping Roadmap
+
+Current priority order:
+
+- P0 Existing Case Field Merge: handle inherit, update, conflict, clear, and field source tracking for same-thread/existing-case updates.
+- P1 Extraction Schema and Typed Field Rules: tighten deadline, next action, required materials, and status transition semantics.
+- P2 RAG Guardrails: RAG may provide supporting evidence, but must not create current-case facts by similarity alone.
+- P3 Hybrid Search Optimization: freeze main search architecture until P0-P2 stabilize, then evaluate cross-thread/cross-case linking separately.
+
+P0 merge contract implemented:
+
+- Inherit: if current message omits a field and existing case has it, keep existing value and mark source `inherited`.
+- Update: if existing case lacks a field and current message provides it, apply it and mark source `changed`; this does not require human review by itself.
+- Conflict: if both existing and current values exist and differ for critical fields, keep existing case value, mark source `conflict`, create review context, and require human review.
+- Clear: terminal/current completion or cancellation semantics may clear action/material fields and mark source `cleared`.
+- Source tracking: thread analysis now returns `fieldSources` and `clearedFields`, and `ai_extractions` persists `field_sources` and `cleared_fields` JSONB.
+- Compatibility: when both submission and publish deadlines exist, a publish-only change no longer forces `expectedDeadline` to be treated as an independent conflict; `expectedDeadline` remains controlled by `submissionDeadline`.
+
+P0 validation result:
+
+- Thread `threadContextRagOn` full overall improved from `0.954` to `1.000` after applying the merge contract and expanding thread fixtures.
+- P0 thread validation now covers 6 fixtures and 90 scored fields, including `fieldSources` and `clearedFields` metadata.
+- `needsHumanReviewCount` now reflects true conflicts, not safe missing-field updates.

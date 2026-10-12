@@ -12,6 +12,28 @@
 - Did not change RAG retrieval scoring, storage schema, LINE integration, or LINE webhook behavior.
 - Kept the change isolated to RAG-assisted replies and rule-context sanitation so it does not conflict with future LINE login or LINE message integration work.
 
+## 2026-10-12 - P0 Existing Case Field Merge
+
+### Completed
+- Added thread-aware field merge semantics for inherit, update, conflict, and clear decisions.
+- Added `fieldSources` and `clearedFields` to thread-aware extraction results.
+- Persisted `field_sources` and `cleared_fields` JSON metadata on `ai_extractions`.
+- Updated reanalysis to use the same thread-aware existing-case merge path as message import.
+- Expanded thread fixture coverage to verify safe updates, conflicts, compatible inheritance, terminal clear behavior, field sources, and cleared fields.
+
+### Decisions
+- Missing existing values can be safely updated from the current message without human review.
+- Conflicting critical values keep the existing case value and go through human review.
+- Terminal/cancelled messages can clear action/material fields.
+- Hybrid Search remains frozen until P0-P2 stabilize.
+
+### Verification
+- `npm run db:migrate`: passed.
+- `npm run accuracy`: passed; thread context RAG-on full overall `1.000` across 6 fixtures and 90 scored fields.
+- `npm run type-check`: passed.
+- `npm run build`: passed.
+- `npm run smoke`: passed.
+
 ## 2026-08-04 - Documentation Baseline
 
 ### Completed

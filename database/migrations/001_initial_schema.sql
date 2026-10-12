@@ -149,6 +149,8 @@ CREATE TABLE IF NOT EXISTS ai_extractions (
   extracted_fields JSONB NOT NULL DEFAULT '{}'::jsonb,
   inherited_fields JSONB NOT NULL DEFAULT '{}'::jsonb,
   changed_fields JSONB NOT NULL DEFAULT '{}'::jsonb,
+  cleared_fields JSONB NOT NULL DEFAULT '{}'::jsonb,
+  field_sources JSONB NOT NULL DEFAULT '{}'::jsonb,
   conflicting_fields JSONB NOT NULL DEFAULT '[]'::jsonb,
   needs_human_review BOOLEAN NOT NULL DEFAULT false,
   review_status TEXT NOT NULL DEFAULT 'none',
@@ -168,6 +170,8 @@ ALTER TABLE ai_extractions ADD COLUMN IF NOT EXISTS warnings JSONB NOT NULL DEFA
 ALTER TABLE ai_extractions ADD COLUMN IF NOT EXISTS extracted_fields JSONB NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE ai_extractions ADD COLUMN IF NOT EXISTS inherited_fields JSONB NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE ai_extractions ADD COLUMN IF NOT EXISTS changed_fields JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE ai_extractions ADD COLUMN IF NOT EXISTS cleared_fields JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE ai_extractions ADD COLUMN IF NOT EXISTS field_sources JSONB NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE ai_extractions ADD COLUMN IF NOT EXISTS conflicting_fields JSONB NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE ai_extractions ADD COLUMN IF NOT EXISTS needs_human_review BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE ai_extractions ADD COLUMN IF NOT EXISTS review_status TEXT NOT NULL DEFAULT 'none';

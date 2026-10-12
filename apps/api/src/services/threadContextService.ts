@@ -2,6 +2,7 @@ import type {AiExtraction, CaseRecord, MessageEvent, ThreadAwareExtractionResult
 import {analyzeMessage} from './aiService.js';
 
 const comparableFields: ThreadAwareField[] = ['clientName', 'projectItem', 'quoteAmount', 'expectedDeadline', 'submissionDeadline', 'publishDeadline'];
+const criticalFields = new Set<ThreadAwareField>(['projectItem', 'quoteAmount', 'expectedDeadline', 'submissionDeadline', 'publishDeadline']);
 
 function extractionFromCase(existingCase: CaseRecord): AiExtraction {
   return {
@@ -38,6 +39,17 @@ function compatibleValue(field: ThreadAwareField, existing: unknown, current: un
   return existing.toLowerCase().includes(current.toLowerCase()) || current.toLowerCase().includes(existing.toLowerCase());
 }
 
+function isTerminalStatus(extraction: AiExtraction) {
+  return extraction.caseStatus === '已完成' || extraction.caseStatus === '已流失' || extraction.intent === '取消合作';
+}
+
+function expectedDeadlineControlledBySubmission(existingExtraction: AiExtraction, currentExtraction: AiExtraction) {
+  return hasValue(existingExtraction.submissionDeadline)
+    && compatibleValue('submissionDeadline', existingExtraction.submissionDeadline, currentExtraction.submissionDeadline ?? existingExtraction.submissionDeadline)
+    && hasValue(currentExtraction.publishDeadline)
+    && !compatibleValue('publishDeadline', existingExtraction.publishDeadline, currentExtraction.publishDeadline);
+}
+
 function mergeMissingFields(extraction: AiExtraction) {
   const missing = new Set(extraction.missingFields);
   if (extraction.projectItem) missing.delete('project_item');
@@ -51,7 +63,7 @@ function mergeMissingFields(extraction: AiExtraction) {
 }
 
 function hasPendingCriticalChange(result: {changedFields: Partial<AiExtraction>; conflictingFields: ThreadFieldConflict[]}) {
-  return result.conflictingFields.length > 0 || ['projectItem', 'quoteAmount', 'expectedDeadline', 'submissionDeadline', 'publishDeadline'].some((field) => field in result.changedFields);
+  return result.conflictingFields.length > 0;
 }
 
 function buildThreadSummary(messages: MessageEvent[], currentText: string) {
@@ -83,7 +95,9 @@ export async function analyzeThreadAwareMessage(input: {senderName: string; text
   const extractedFields: Partial<AiExtraction> = {};
   const inheritedFields: Partial<AiExtraction> = {};
   const changedFields: Partial<AiExtraction> = {};
+  const clearedFields: Partial<AiExtraction> = {};
   const conflictingFields: ThreadFieldConflict[] = [];
+  const fieldSources: ThreadAwareExtractionResult['fieldSources'] = {};
 
   for (const field of comparableFields) {
     const currentValue = currentExtraction[field];
@@ -99,36 +113,79 @@ export async function analyzeThreadAwareMessage(input: {senderName: string; text
     if (!hasValue(currentValue) && hasValue(existingValue)) {
       finalExtraction[field] = existingValue as never;
       inheritedFields[field] = existingValue as never;
+      fieldSources[field] = 'inherited';
       continue;
     }
 
     if (hasValue(currentValue) && !hasValue(existingValue)) {
       changedFields[field] = currentValue as never;
+      fieldSources[field] = 'changed';
       continue;
     }
 
     if (hasValue(currentValue) && hasValue(existingValue) && !compatibleValue(field, existingValue, currentValue)) {
+      if (field === 'expectedDeadline' && expectedDeadlineControlledBySubmission(existingExtraction, currentExtraction)) {
+        finalExtraction.expectedDeadline = existingExtraction.expectedDeadline;
+        inheritedFields.expectedDeadline = existingExtraction.expectedDeadline;
+        fieldSources.expectedDeadline = 'inherited';
+        continue;
+      }
+
       changedFields[field] = currentValue as never;
-      if (field === 'projectItem' || field === 'quoteAmount' || field === 'expectedDeadline' || field === 'submissionDeadline' || field === 'publishDeadline') {
+      fieldSources[field] = 'changed';
+      if (criticalFields.has(field)) {
         conflictingFields.push({field, existing: existingValue, extracted: currentValue, reason: 'Current message conflicts with existing case state.'});
         finalExtraction[field] = existingValue as never;
+        fieldSources[field] = 'conflict';
       }
-    } else if (field === 'projectItem' && hasValue(currentValue) && hasValue(existingValue) && normalize(currentValue) !== normalize(existingValue)) {
+    } else if (hasValue(currentValue) && hasValue(existingValue)) {
       finalExtraction[field] = existingValue as never;
       inheritedFields[field] = existingValue as never;
+      fieldSources[field] = 'inherited';
+    } else if (hasValue(currentValue)) {
+      fieldSources[field] = 'extracted';
     }
   }
 
   if (existingExtraction) {
-    if (!hasValue(currentExtraction.nextAction) && hasValue(existingExtraction.nextAction)) {
+    if (!isTerminalStatus(currentExtraction)) {
+      finalExtraction.caseStatus = existingExtraction.caseStatus;
+      fieldSources.caseStatus = 'inherited';
+    } else {
+      fieldSources.caseStatus = 'extracted';
+    }
+
+    if (isTerminalStatus(currentExtraction) && hasValue(existingExtraction.nextAction)) {
+      finalExtraction.nextAction = null;
+      finalExtraction.nextActionSource = null;
+      clearedFields.nextAction = existingExtraction.nextAction;
+      fieldSources.nextAction = 'cleared';
+    } else if (!hasValue(currentExtraction.nextAction) && hasValue(existingExtraction.nextAction)) {
       finalExtraction.nextAction = existingExtraction.nextAction;
       finalExtraction.nextActionSource = existingExtraction.nextActionSource;
       inheritedFields.nextAction = existingExtraction.nextAction;
+      fieldSources.nextAction = 'inherited';
+    } else if (hasValue(currentExtraction.nextAction)) {
+      fieldSources.nextAction = compatibleValue('nextAction', existingExtraction.nextAction, currentExtraction.nextAction) ? 'inherited' : 'changed';
     }
-    if (currentExtraction.requiredMaterials.length === 0 && existingExtraction.requiredMaterials.length > 0) {
+
+    if (isTerminalStatus(currentExtraction) && existingExtraction.requiredMaterials.length > 0) {
+      finalExtraction.requiredMaterials = [];
+      clearedFields.requiredMaterials = existingExtraction.requiredMaterials;
+      fieldSources.requiredMaterials = 'cleared';
+    } else if (currentExtraction.requiredMaterials.length === 0 && existingExtraction.requiredMaterials.length > 0) {
       finalExtraction.requiredMaterials = existingExtraction.requiredMaterials;
       inheritedFields.requiredMaterials = existingExtraction.requiredMaterials;
+      fieldSources.requiredMaterials = 'inherited';
+    } else if (currentExtraction.requiredMaterials.length > 0) {
+      fieldSources.requiredMaterials = 'extracted';
     }
+  } else {
+    for (const field of comparableFields) {
+      if (hasValue(currentExtraction[field])) fieldSources[field] = 'extracted';
+    }
+    if (hasValue(currentExtraction.nextAction)) fieldSources.nextAction = 'extracted';
+    if (currentExtraction.requiredMaterials.length > 0) fieldSources.requiredMaterials = 'extracted';
   }
 
   finalExtraction.missingFields = mergeMissingFields(finalExtraction);
@@ -141,7 +198,9 @@ export async function analyzeThreadAwareMessage(input: {senderName: string; text
       extractedFields,
       inheritedFields,
       changedFields,
+      clearedFields,
       conflictingFields,
+      fieldSources,
       needsHumanReview: false,
       threadSummary: buildThreadSummary(input.threadMessages ?? [], input.text),
       existingCaseId: input.existingCase?.id ?? null,
