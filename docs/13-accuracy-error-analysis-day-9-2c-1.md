@@ -311,3 +311,21 @@ P0 validation result:
 - Thread `threadContextRagOn` full overall improved from `0.954` to `1.000` after applying the merge contract and expanding thread fixtures.
 - P0 thread validation now covers 6 fixtures and 90 scored fields, including `fieldSources` and `clearedFields` metadata.
 - `needsHumanReviewCount` now reflects true conflicts, not safe missing-field updates.
+
+## P1 Typed Field Rules Result
+
+Implemented first P1 slice:
+
+- `caseStatus` is now optionally scored in extraction accuracy fixtures.
+- Completion/closure language maps to `intent: 完成結案`, `caseStatus: 已完成`, no next action, and no missing fields.
+- Cancellation fixtures now explicitly score `caseStatus: 已流失`.
+- Submission deadline detection handles `第一版`, `交第一版`, and deadline-context `交` wording.
+- Required material extraction avoids treating generic project descriptions like `需要產品攝影` as a pending material named `產品`.
+- Next-action rules treat `估價` as quote work and avoid draft-preparation next actions for deadline-risk messages.
+
+Validation result:
+
+- Development ragOff full overall improved to `0.902`.
+- Development ragOff extended overall improved to `0.920`.
+- Development ragOff `submissionDeadline`, `publishDeadline`, `requiredMaterials`, and `caseStatus` are each `1.000` on the current fixture set.
+- Thread context RAG-on remains `1.000`.

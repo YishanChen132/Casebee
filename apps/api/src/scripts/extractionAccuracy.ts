@@ -10,7 +10,7 @@ import {findSimilarCasesForText} from '../services/ragService.js';
 import {analyzeMessage} from '../services/aiService.js';
 import {analyzeThreadAwareMessage} from '../services/threadContextService.js';
 
-type ExpectedExtraction = Pick<AiExtraction, 'clientName' | 'projectItem' | 'quoteAmount' | 'expectedDeadline' | 'submissionDeadline' | 'publishDeadline' | 'nextAction' | 'requiredMaterials' | 'intent' | 'missingFields'>;
+type ExpectedExtraction = Pick<AiExtraction, 'clientName' | 'projectItem' | 'quoteAmount' | 'expectedDeadline' | 'submissionDeadline' | 'publishDeadline' | 'nextAction' | 'requiredMaterials' | 'intent' | 'missingFields'> & Partial<Pick<AiExtraction, 'caseStatus'>>;
 type DatasetName = 'development' | 'holdout' | 'thread';
 type RagMode = 'rag_on' | 'rag_off' | 'thread_current_rag_off' | 'thread_current_rag_on' | 'thread_context_rag_off' | 'thread_context_rag_on' | 'thread_context';
 type NormalizedErrorType = 'false_positive' | 'false_negative' | 'wrong_value' | 'normalization_mismatch' | 'evaluation_mismatch' | 'thread_inheritance_error' | 'RAG_interference' | 'rule_engine_interference';
@@ -66,6 +66,7 @@ const developmentFixturePath = fileURLToPath(new URL('../fixtures/extraction/acc
 const holdoutFixturePath = fileURLToPath(new URL('../fixtures/extraction/holdout-fixtures.json', import.meta.url));
 const threadFixturePath = fileURLToPath(new URL('../fixtures/extraction/thread-fixtures.json', import.meta.url));
 const scalarFields: Array<keyof Omit<ExpectedExtraction, 'missingFields' | 'requiredMaterials'>> = ['clientName', 'projectItem', 'quoteAmount', 'expectedDeadline', 'submissionDeadline', 'publishDeadline', 'nextAction', 'intent'];
+const optionalScalarFields: Array<keyof Pick<AiExtraction, 'caseStatus'>> = ['caseStatus'];
 const reportedFields = ['projectItem', 'expectedDeadline', 'submissionDeadline', 'publishDeadline', 'nextAction', 'intent', 'requiredMaterials', 'missingFields'];
 const legacyCoreFields = new Set(['clientName', 'projectItem', 'quoteAmount', 'expectedDeadline', 'intent', 'missingFields', 'classification']);
 const extendedFields = new Set(['submissionDeadline', 'publishDeadline', 'nextAction', 'requiredMaterials']);
@@ -347,6 +348,9 @@ async function runFixture(fixture: ExtractionFixture, ragEnabled: boolean) {
   if (fixture.expected) {
     for (const field of scalarFields) {
       fields.push(compareScalar(field, fixture.expected, extraction, fixture.receivedAt));
+    }
+    for (const field of optionalScalarFields) {
+      if (field in fixture.expected) fields.push(compareScalar(field, fixture.expected, extraction, fixture.receivedAt));
     }
     fields.push(compareStringSet('requiredMaterials', fixture.expected.requiredMaterials ?? [], extraction.requiredMaterials));
     fields.push(compareMissingFields(fixture.expected.missingFields, extraction.missingFields));

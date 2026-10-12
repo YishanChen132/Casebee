@@ -55,7 +55,7 @@ const missingFieldLabels: Record<string, string> = {
   next_action: '下一步',
 };
 
-const materialNames = ['品牌 Logo', 'Logo', '產品圖片', '商品連結', '活動連結', 'brief', '文案', '產品', '樣品', '參考素材'];
+const materialNames = ['品牌 Logo', 'Logo', '產品圖片', '商品連結', '活動連結', 'brief', '文案', '樣品', '參考素材'];
 
 const datePattern = '(今天|明天|後天|這週五|本週五|下週五|下週|本週|\\d{1,2}\\s*月(?:底|中)|月底|月中|\\d{4}\\s*年\\s*\\d{1,2}\\s*月\\s*\\d{1,2}\\s*日|\\d{4}[-/]\\d{1,2}[-/]\\d{1,2}|\\d{1,2}\\s*月\\s*\\d{1,2}\\s*日|\\d{1,2}\\/\\d{1,2})';
 
@@ -209,8 +209,8 @@ function compatibleRagExample(intent: string, example: RagExample) {
 }
 
 function mergeMissingFields(input: {baseFields: string[]; similarCases: RagExample[]; projectItem: string | null; quoteAmount: number | null; expectedDeadline: string | null; intent: string; sourceText: string}) {
-  if (input.intent === '確認合作' || input.intent === '取消合作') {
-    return input.intent === '取消合作' ? [] : input.baseFields;
+  if (input.intent === '確認合作' || input.intent === '取消合作' || input.intent === '完成結案') {
+    return input.intent === '取消合作' || input.intent === '完成結案' ? [] : input.baseFields;
   }
 
   const knownFields = new Set<string>();
@@ -250,7 +250,7 @@ function extractDeadline(text: string, receivedAt?: string) {
 }
 
 function extractTypedDeadline(text: string, type: 'submission' | 'publish', receivedAt?: string) {
-  const keywords = type === 'submission' ? '(?:交稿|初稿|腳本|素材|成品|修改稿|交件|交付|完稿|提交)' : '(?:上線|發布|貼文日|貼文上線|貼文發布|公開|活動開始|上架|刊登)';
+  const keywords = type === 'submission' ? '(?:交稿|交初稿|交第一版|初稿|第一版|腳本|素材|成品|修改稿|交件|交付|完稿|提交|交)' : '(?:上線|發布|貼文日|貼文上線|貼文發布|公開|活動開始|上架|刊登)';
   const before = text.match(new RegExp(`${datePattern}[^。；;，,\n]{0,16}${keywords}`));
   if (before?.[1]) return normalizeDateToken(before[1], receivedAt);
   const after = text.match(new RegExp(`${keywords}[^。；;，,\n]{0,16}${datePattern}`));
@@ -278,8 +278,8 @@ function extractProvidedMaterials(text: string) {
 
 function extractRequiredMaterials(text: string, providedMaterials: string[]) {
   const required: string[] = [];
-  const materialRequest = text.match(/(?:請提供|待提供|補|等待|缺|需要)([^。；;\n]+)/i)?.[1] ?? '';
-  const hasMaterialRequest = /請提供|待提供|補|等待|缺|需要/.test(text);
+  const materialRequest = text.match(/(?:請提供|待提供|補|等待|缺|還需要|需要.*(?:素材|圖片|連結|brief|文案|Logo|樣品))([^。；;\n]*)/i)?.[1] ?? '';
+  const hasMaterialRequest = /請提供|待提供|補|等待|缺|還需要|需要.*(?:素材|圖片|連結|brief|文案|Logo|樣品)/.test(text);
   for (const material of materialNames) {
     const normalized = material === 'Logo' ? '品牌 Logo' : material;
     const pattern = new RegExp(`(?:需要|請提供|待提供|補|等|等待|缺)[^。；;，,\n]{0,20}${material}|${material}[^。；;，,\n]{0,20}(?:需要|請提供|待提供|補|等|等待|缺)`, 'i');
@@ -291,7 +291,7 @@ function extractRequiredMaterials(text: string, providedMaterials: string[]) {
 
 function inferNextAction(input: {text: string; intent: string; quoteAmount: number | null; caseStatus: CaseStatus; requiredMaterials: string[]; submissionDeadline: string | null}) {
   const explicit: Array<[RegExp, string]> = [
-    [/請.*報價|提供報價/, '提供報價'],
+    [/請.*報價|提供報價|估價/, '提供報價'],
     [/確認檔期|檔期/, '確認檔期'],
     [/請提供|待提供|等待.*素材|補.*素材/, '等待客戶提供素材'],
     [/交初稿|提交初稿|給初稿|交稿/, '準備／提交初稿'],
@@ -300,6 +300,7 @@ function inferNextAction(input: {text: string; intent: string; quoteAmount: numb
   const explicitAction = explicit.find(([pattern]) => pattern.test(input.text))?.[1];
   if (explicitAction) return {nextAction: explicitAction, nextActionSource: 'extracted' as const};
   if (input.caseStatus === '已完成' || input.caseStatus === '已流失') return {nextAction: null, nextActionSource: null};
+  if (input.intent === '交期風險') return {nextAction: null, nextActionSource: null};
   if (!input.quoteAmount && (input.intent === '詢價' || input.intent === '合作邀請')) return {nextAction: '提供報價', nextActionSource: 'inferred' as const};
   if (input.caseStatus === '已報價' || input.caseStatus === '等待回覆') return {nextAction: '等待客戶確認', nextActionSource: 'inferred' as const};
   if (input.requiredMaterials.length > 0) return {nextAction: '等待客戶提供素材', nextActionSource: 'inferred' as const};
@@ -308,6 +309,9 @@ function inferNextAction(input: {text: string; intent: string; quoteAmount: numb
 }
 
 function classifyIntent(text: string) {
+  if (/已完成|結案|已交付|完成交付|尾款.*(?:收到|已收)|款項.*收到/.test(text)) {
+    return '完成結案';
+  }
   if (/取消|暫停合作|先暫停|不繼續|流失/.test(text)) {
     return '取消合作';
   }
@@ -443,6 +447,9 @@ function mapStatus(intent: string): CaseStatus {
   if (intent === '取消合作') {
     return '已流失';
   }
+  if (intent === '完成結案') {
+    return '已完成';
+  }
   return '潛在詢問';
 }
 
@@ -454,7 +461,8 @@ export function extractMessage(input: {senderName: string; text: string; prepare
   const submissionDeadline = extractTypedDeadline(sourceText, 'submission', input.receivedAt);
   const publishDeadline = extractTypedDeadline(sourceText, 'publish', input.receivedAt);
   const expectedDeadline = resolveExpectedDeadline({expectedDeadline: extractDeadline(sourceText, input.receivedAt), submissionDeadline, publishDeadline});
-  const intent = classifyIntent(sourceText) === '取消合作' ? '取消合作' : (intentFromClassification(input.classification) ?? classifyIntent(sourceText));
+  const classifiedIntent = classifyIntent(sourceText);
+  const intent = classifiedIntent === '取消合作' || classifiedIntent === '完成結案' ? classifiedIntent : (intentFromClassification(input.classification) ?? classifiedIntent);
   const caseStatus = mapStatus(intent);
   const providedMaterials = extractProvidedMaterials(sourceText);
   const requiredMaterials = extractRequiredMaterials(sourceText, providedMaterials);

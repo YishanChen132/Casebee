@@ -34,6 +34,22 @@
 - `npm run build`: passed.
 - `npm run smoke`: passed.
 
+## 2026-10-12 - P1 Typed Field Rules
+
+### Completed
+- Added optional `caseStatus` scoring to the extraction accuracy evaluator.
+- Added completed/closed-case intent detection for `已完成`, `結案`, `已交付`, and final-payment received language.
+- Mapped completed cases to `已完成`, with no next action and no missing fields.
+- Tightened typed submission deadline detection for `第一版`, `交第一版`, and generic `交` in deadline context.
+- Reduced required-material false positives by avoiding generic `需要產品...` matches as material requests.
+- Treated `估價` as an explicit quote next action and prevented deadline-risk messages from auto-generating draft-preparation next actions.
+
+### Verification
+- `npm run accuracy`: passed; development ragOff full overall `0.902`, extended overall `0.920`, thread context RAG-on `1.000`.
+- `npm run type-check`: passed.
+- `npm run build`: passed.
+- `npm run smoke`: passed.
+
 ## 2026-08-04 - Documentation Baseline
 
 ### Completed
