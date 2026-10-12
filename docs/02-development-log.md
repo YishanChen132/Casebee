@@ -117,6 +117,27 @@
 - `npm run build`: passed.
 - `npm run smoke`: passed.
 
+## 2026-10-12 - P5 Weak-Field Extraction Optimization
+
+### Completed
+- Added a P5 comparison harness for the three weakest extraction fields: `intent`, `nextAction`, and `missingFields`.
+- Compared A/B/C explicitly:
+  - A: legacy/current extraction profile.
+  - B: `p5_event_decision` profile using semantic event decisions inside the existing extraction call path.
+  - C: LangChain is reported as `not_configured` because the repo has no LangChain dependency or chain implementation yet.
+- Kept model-call count unchanged; the P5 comparison reports `modelCallsAdded: 0`.
+- Updated extraction rules so intent is not inferred from budget keywords alone, next actions require an active explicit/stage-backed action, and missing fields are derived from the current case event.
+- Tightened required-material detection so project names like `Logo + 名片設計` do not become missing client materials when the requested action is actually contract-related.
+- Updated the extraction system prompt to express the same three-stage weak-field decision order for AI providers.
+
+### Verification
+- `npm run comparison:p5 --workspace @casebee/api`: passed.
+- P5 development weak-field average: A `0.720` -> B `1.000`.
+- P5 holdout weak-field average: A `0.750` -> B `1.000`.
+- `npm run accuracy --workspace @casebee/api`: passed; development, holdout, and thread context full overall `1.000`.
+- `npm run classification:p4 --workspace @casebee/api`: passed, 14/14, bucket accuracy `1.000`.
+- `npm run type-check`: passed.
+
 ## 2026-08-04 - Documentation Baseline
 
 ### Completed

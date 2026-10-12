@@ -11,6 +11,10 @@ const extractionSystemPrompt = `You extract structured case-management data from
 Return only valid JSON with these keys:
 clientName, projectItem, quoteAmount, expectedDeadline, submissionDeadline, publishDeadline, nextAction, nextActionSource, requiredMaterials, providedMaterials, intent, caseStatus, missingFields, summary, suggestedReply.
 Use Traditional Chinese for summary and suggestedReply.
+Perform the weak-field decisions explicitly in this order without adding extra model calls:
+1. intent: identify the main semantic event of this message, not just keyword presence.
+2. nextAction: decide who must do what now, and omit stale or merely informational actions.
+3. missingFields: list only information still required for the current case state after known facts are applied.
 Prefer the company/brand name for clientName, not a sentence such as "我是某某團隊".
 Extract quoteAmount only when a real budget/fee/quote amount is mentioned; do not treat years or dates as amounts.
 Extract expectedDeadline as the next closest key deadline. Use submissionDeadline for draft/script/material/final delivery to client. Use publishDeadline for public launch/posting/release/campaign dates. Do not infer typed deadlines when the text only says a generic completion date.

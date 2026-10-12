@@ -413,3 +413,43 @@ Validation result:
 - Case-related miss rate: `0.000`.
 - Uncertain over-create rate: `0.000`.
 - Main extraction regression remains stable: development full overall `0.918`, classification `1.000`, thread context RAG-on `1.000`.
+
+## P5 Weak-Field A/B/C Result
+
+Goal:
+
+- Improve the three residual weak fields: `intent`, `nextAction`, and `missingFields`.
+- Split the large extraction decision into clearer semantic tasks without adding extra model calls.
+- Compare LangChain only when there is a real chain implementation, not by wrapping the same code path and calling it a win.
+
+Compared variants:
+
+- A current pipeline: legacy extraction profile.
+- B improved prompt/schema/rules: `p5_event_decision` profile in the same extraction call path.
+- C LangChain: `not_configured`; there is no LangChain dependency or chain implementation in the repo yet.
+
+P5 comparison metrics from `npm run comparison:p5 --workspace @casebee/api`:
+
+| Dataset | Variant | Weak Avg | Intent | NextAction Exact | NextAction Category | MissingFields Exact |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Development | A current | 0.720 | 0.840 | 0.680 | 0.680 | 0.640 |
+| Development | B P5 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+| Holdout | A current | 0.750 | 1.000 | 0.500 | 0.500 | 0.750 |
+| Holdout | B P5 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+
+Implementation notes:
+
+- `intent` now treats budget/fee mentions as facts, not automatically as inquiry intent; inquiry requires a semantic ask such as quote, estimate, price question, commission, or service request.
+- `nextAction` now avoids stale inferred actions and only emits active actions when explicit text or current stage semantics support them.
+- `missingFields` now adds case requirements by event type, including revision scope, usage rights, required materials, and social/post scope only when context requires them.
+- Required-material extraction no longer treats project names such as `Logo + 名片設計` as missing client-provided materials when the actual request is contract-related.
+- P5 kept RAG and Hybrid Search unchanged.
+
+Regression result after P5:
+
+- `npm run accuracy --workspace @casebee/api`: passed.
+- Development RAG-on full overall: `1.000`.
+- Holdout RAG-on full overall: `1.000`.
+- Thread context RAG-on full overall: `1.000`.
+- RAG fact-field delta remains `0`.
+- `npm run classification:p4 --workspace @casebee/api`: passed, 14/14, bucket accuracy `1.000`.

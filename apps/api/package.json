@@ -12,7 +12,8 @@
     "db:seed": "tsx src/scripts/seed.ts",
     "smoke": "tsx src/scripts/smoke.ts",
     "accuracy": "tsx src/scripts/extractionAccuracy.ts",
-    "classification:p4": "tsx src/scripts/classificationP4.ts"
+    "classification:p4": "tsx src/scripts/classificationP4.ts",
+    "comparison:p5": "tsx src/scripts/p5WeakFieldComparison.ts"
   },
   "dependencies": {
     "@casebee/shared": "0.1.0",

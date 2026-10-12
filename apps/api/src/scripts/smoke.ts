@@ -183,7 +183,7 @@ async function main() {
         senderName: 'Mori Select',
         text: '影片希望 10 月底發布，預算 30000。',
       },
-      expected: {clientName: 'Mori Select', projectItem: '影片', quoteAmount: 30000, expectedDeadline: '10/31', submissionDeadline: null, publishDeadline: '10/31', nextAction: null, intent: '詢價'},
+      expected: {clientName: 'Mori Select', projectItem: '影片', quoteAmount: 30000, expectedDeadline: '10/31', submissionDeadline: null, publishDeadline: '10/31', nextAction: null, intent: '一般訊息'},
     },
     {
       name: 'generic deadline only',
@@ -191,7 +191,7 @@ async function main() {
         senderName: '晴天行銷',
         text: '希望 9/15 前完成官網設計，預算 120000。',
       },
-      expected: {clientName: '晴天行銷', projectItem: '官網設計', quoteAmount: 120000, expectedDeadline: '9/15', submissionDeadline: null, publishDeadline: null, nextAction: null, intent: '詢價'},
+      expected: {clientName: '晴天行銷', projectItem: '官網設計', quoteAmount: 120000, expectedDeadline: '9/15', submissionDeadline: null, publishDeadline: null, nextAction: null, intent: '一般訊息'},
     },
     {
       name: 'relative friday submission',
@@ -200,7 +200,7 @@ async function main() {
         text: '這週五前給腳本，短影音預算 20000。',
         receivedAt: '2026-08-31T00:00:00+08:00',
       },
-      expected: {clientName: '小島咖啡', projectItem: '短影音', quoteAmount: 20000, expectedDeadline: '9/4', submissionDeadline: '9/4', publishDeadline: null, nextAction: '準備／提交初稿', intent: '詢價'},
+      expected: {clientName: '小島咖啡', projectItem: '短影音', quoteAmount: 20000, expectedDeadline: '9/4', submissionDeadline: '9/4', publishDeadline: null, nextAction: null, intent: '一般訊息'},
     },
     {
       name: 'required materials waiting',
@@ -216,7 +216,7 @@ async function main() {
         senderName: '沐白茶室',
         text: '附件提供 Logo，包裝設計還需要文案，預算 35000，9/20 前完稿。',
       },
-      expected: {clientName: '沐白茶室', projectItem: '包裝設計', quoteAmount: 35000, expectedDeadline: '9/20', submissionDeadline: '9/20', publishDeadline: null, nextAction: '等待客戶提供素材', requiredMaterials: ['文案'], intent: '詢價'},
+      expected: {clientName: '沐白茶室', projectItem: '包裝設計', quoteAmount: 35000, expectedDeadline: '9/20', submissionDeadline: '9/20', publishDeadline: null, nextAction: '等待客戶提供素材', requiredMaterials: ['文案'], intent: '一般訊息'},
     },
   ];
 
