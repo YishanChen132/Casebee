@@ -181,51 +181,23 @@ function extractProjectItem(text: string) {
   return keyword ? (projectNormalization[keyword] ?? keyword) : null;
 }
 
-function inferProjectFromRag(similarCases: RagExample[]) {
-  const best = similarCases.find((item) => item.score >= 18);
-  return best?.projectItem ?? null;
-}
-
-function mergeProjectItem(ruleProjectItem: string | null, ragProjectItem: string | null) {
-  if (!ruleProjectItem) {
-    return ragProjectItem;
-  }
-  if (ragProjectItem && ['影片', '短影音', '品牌合作', '貼文'].includes(ruleProjectItem) && ragProjectItem.length > ruleProjectItem.length) {
-    return ragProjectItem;
-  }
-  return ruleProjectItem;
-}
-
-function compatibleRagExample(intent: string, example: RagExample) {
-  const mapping: Record<string, string[]> = {
-    合作邀請: ['collaboration_invite'],
-    詢價: ['quote_inquiry'],
-    修改需求: ['revision_request'],
-    交期風險: ['deadline_or_material_risk'],
-    確認合作: ['confirmation_or_contract'],
-    一般訊息: ['collaboration_invite', 'quote_inquiry', 'revision_request', 'deadline_or_material_risk'],
-  };
-  return !example.caseType || (mapping[intent] ?? []).includes(example.caseType);
-}
-
-function mergeMissingFields(input: {baseFields: string[]; similarCases: RagExample[]; projectItem: string | null; quoteAmount: number | null; expectedDeadline: string | null; intent: string; sourceText: string}) {
+function mergeMissingFields(input: {baseFields: string[]; projectItem: string | null; quoteAmount: number | null; expectedDeadline: string | null; intent: string; sourceText: string}) {
   if (input.intent === '確認合作' || input.intent === '取消合作' || input.intent === '完成結案') {
     return input.intent === '取消合作' || input.intent === '完成結案' ? [] : input.baseFields;
   }
 
-  const knownFields = new Set<string>();
-  if (input.projectItem && input.projectItem !== '品牌合作') knownFields.add('project_item');
-  if (input.quoteAmount) knownFields.add('quote_amount');
-  if (input.expectedDeadline) knownFields.add('expected_deadline');
-  if (/授權|使用範圍|使用期間/.test(input.sourceText)) knownFields.add('usage_rights');
+  // P2 guardrail: missing fields are derived from current-message schema rules only.
+  // Similar cases may guide replies, but must not create current-case facts.
   const fields = new Set<string>(input.baseFields);
-  const best = input.similarCases.find((item) => item.score >= 30 && compatibleRagExample(input.intent, item));
-  for (const example of best ? [best] : []) {
-    for (const field of example.typicalMissingFields) {
-      if (!knownFields.has(field)) {
-        fields.add(field);
-      }
-    }
+  if (input.intent === '合作邀請') {
+    if (!input.projectItem || input.projectItem === '品牌合作') fields.add('project_item');
+    fields.add('deliverables');
+    fields.add('usage_rights');
+    fields.add('revision_scope');
+  }
+  if (input.intent === '詢價' && /網站|官網|landing page/i.test(input.sourceText)) {
+    fields.add('scope');
+    fields.add('contract');
   }
   return normalizeMissingFields(Array.from(fields));
 }
@@ -456,7 +428,7 @@ function mapStatus(intent: string): CaseStatus {
 export function extractMessage(input: {senderName: string; text: string; prepared?: PreprocessedEmail; classification?: MessageClassification; similarCases?: RagExample[]; receivedAt?: string}): AiExtraction {
   const sourceText = input.prepared?.cleanText ?? input.text;
   const clientName = inferCustomerName({senderName: input.senderName, text: sourceText});
-  const projectItem = mergeProjectItem(extractProjectItem(sourceText), inferProjectFromRag(input.similarCases ?? []));
+  const projectItem = extractProjectItem(sourceText);
   const quoteAmount = extractAmount(sourceText);
   const submissionDeadline = extractTypedDeadline(sourceText, 'submission', input.receivedAt);
   const publishDeadline = extractTypedDeadline(sourceText, 'publish', input.receivedAt);
@@ -476,7 +448,7 @@ export function extractMessage(input: {senderName: string; text: string; prepare
     /請提供.*(素材|圖片|連結|brief|文案|Logo|產品|樣品)|待提供|等待.*素材|補.*素材|缺.*素材/.test(sourceText) && requiredMaterials.length === 0 ? 'required_materials' : null,
     !next.nextAction && ['已確認合作', '進行中', '等待素材', '待修改', '待交付'].includes(caseStatus) ? 'next_action' : null,
   ].filter((field): field is string => Boolean(field));
-  const missingFields = mergeMissingFields({baseFields: baseMissingFields, similarCases: input.similarCases ?? [], projectItem, quoteAmount, expectedDeadline, intent, sourceText});
+  const missingFields = mergeMissingFields({baseFields: baseMissingFields, projectItem, quoteAmount, expectedDeadline, intent, sourceText});
 
   return {
     clientName,

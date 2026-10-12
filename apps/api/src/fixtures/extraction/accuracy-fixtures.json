@@ -11,7 +11,7 @@
     "category": "collaboration_invite",
     "senderName": "LumiNote",
     "text": "Subject: 合作邀請\n\n我們想邀請你合作拍一支生活感的筆記 App 宣傳影片，9/15 前上線，會需要 IG 限動轉發。",
-    "expected": {"clientName": "LumiNote", "projectItem": "Reels 影片", "quoteAmount": null, "expectedDeadline": "9/15", "publishDeadline": "9/15", "intent": "合作邀請", "missingFields": ["quote_amount", "usage_rights", "revision_scope", "deliverables"]}
+    "expected": {"clientName": "LumiNote", "projectItem": "影片", "quoteAmount": null, "expectedDeadline": "9/15", "publishDeadline": "9/15", "intent": "合作邀請", "missingFields": ["quote_amount", "usage_rights", "revision_scope", "deliverables"]}
   },
   {
     "id": "gmail-quote-website-003",

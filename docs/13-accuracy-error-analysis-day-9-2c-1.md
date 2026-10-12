@@ -329,3 +329,19 @@ Validation result:
 - Development ragOff extended overall improved to `0.920`.
 - Development ragOff `submissionDeadline`, `publishDeadline`, `requiredMaterials`, and `caseStatus` are each `1.000` on the current fixture set.
 - Thread context RAG-on remains `1.000`.
+
+## P2 RAG Guardrails Result
+
+Implemented RAG guardrail contract:
+
+- RAG may support reply wording, quote range context, success-pattern guidance, and similar-case display.
+- RAG must not create current-case facts such as `projectItem`, deadlines, quote amount, required materials, or missing fields.
+- Current-case facts now come from current-message deterministic extraction and same-thread/existing-case merge only.
+- Recurring schema requirements, such as collaboration deliverables/usage/revision clarification and website scope/contract clarification, are deterministic rules rather than `typicalMissingFields` copied from similar cases.
+
+Validation result:
+
+- Development and holdout RAG before/after fact-field delta is `0`.
+- Thread current-only RAG before/after fact-field delta is `0`.
+- Thread context RAG-on remains `1.000`.
+- Development ragOff full overall is `0.918`; extended overall remains `0.920`.

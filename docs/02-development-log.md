@@ -50,6 +50,21 @@
 - `npm run build`: passed.
 - `npm run smoke`: passed.
 
+## 2026-10-12 - P2 RAG Guardrails
+
+### Completed
+- Removed RAG as a direct source for current-case `projectItem` extraction.
+- Removed RAG `typicalMissingFields` as a direct source for current-case `missingFields`.
+- Kept RAG available for similar-case lookup, suggested replies, quote range context, and success-pattern guidance.
+- Moved recurring collaboration/website missing-field requirements into deterministic schema rules instead of similarity-derived facts.
+- Updated smoke coverage to assert RAG on/off produce the same extraction facts while RAG can still influence suggested replies.
+
+### Verification
+- `npm run accuracy`: passed; RAG before/after fact-field delta `0`, development ragOff full overall `0.918`, thread context RAG-on `1.000`.
+- `npm run type-check`: passed.
+- `npm run build`: passed.
+- `npm run smoke`: passed.
+
 ## 2026-08-04 - Documentation Baseline
 
 ### Completed
