@@ -4,6 +4,7 @@ import type {AiExtraction, Alert, CaseDetail, CaseRecord, Customer, Platform} fr
 import {pool} from '../db/pool.js';
 import {findSimilarCases} from '../services/ragService.js';
 import {computeStageAwareMissingFields, extractionFromCase as stageExtractionFromCase} from '../services/missingFieldService.js';
+import {isMeaningfulDisplayText, sanitizeDisplayText} from '../services/emailBodyNormalizer.js';
 import {syncMissingFieldAlerts} from './alertsRepository.js';
 import {findLatestBusinessProfileByCustomerId, findLatestBusinessRiskScoreByCustomerId} from './businessRepository.js';
 import {mapAlert, mapCase, mapMessage} from './mappers.js';
@@ -110,7 +111,8 @@ export async function createCaseFromExtraction(input: {customer: Customer; platf
   const id = `case-${randomUUID()}`;
   const code = `#CB-${Date.now().toString().slice(-6)}`;
   const projectItem = input.extraction.projectItem ?? '待釐清需求';
-  const title = input.customer.name;
+  const title = isMeaningfulDisplayText(input.customer.name) ? sanitizeDisplayText(input.customer.name) : sanitizeDisplayText(input.extraction.clientName) || '未命名案件';
+  const customerName = isMeaningfulDisplayText(input.customer.name) ? sanitizeDisplayText(input.customer.name) : title;
   const riskLevel = input.extraction.missingFields.length > 0 ? 'warning' : 'normal';
 
   const result = await pool.query(
@@ -121,7 +123,7 @@ export async function createCaseFromExtraction(input: {customer: Customer; platf
       id,
       code,
       input.customer.id,
-      input.customer.name,
+      customerName,
       title,
       input.platform,
       input.extraction.caseStatus,

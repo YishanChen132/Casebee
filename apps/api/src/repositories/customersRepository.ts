@@ -3,6 +3,7 @@ import type {Customer, CustomerDetail, CustomerSummary, Platform} from '@casebee
 import {pool} from '../db/pool.js';
 import {findLatestBusinessProfileByCustomerId, findLatestBusinessRiskScoreByCustomerId} from './businessRepository.js';
 import {mapCase, mapCustomer, mapMessage} from './mappers.js';
+import {isMeaningfulDisplayText, sanitizeDisplayText} from '../services/emailBodyNormalizer.js';
 
 function mapCustomerSummary(row: Record<string, unknown>): CustomerSummary {
   return {
@@ -75,7 +76,8 @@ export async function findCustomerDetailById(customerId: string): Promise<Custom
 }
 
 export async function findOrCreateCustomer(input: {name: string; platform: Platform; contactHandle: string}): Promise<Customer> {
-  const existing = await pool.query('SELECT * FROM customers WHERE name = $1 AND platform = $2 LIMIT 1', [input.name, input.platform]);
+  const name = isMeaningfulDisplayText(input.name) ? sanitizeDisplayText(input.name) : sanitizeDisplayText(input.contactHandle) || '未命名客戶';
+  const existing = await pool.query('SELECT * FROM customers WHERE name = $1 AND platform = $2 LIMIT 1', [name, input.platform]);
 
   if (existing.rows[0]) {
     const updated = await pool.query('UPDATE customers SET last_contact_at = now(), updated_at = now() WHERE id = $1 RETURNING *', [existing.rows[0].id]);
@@ -84,7 +86,7 @@ export async function findOrCreateCustomer(input: {name: string; platform: Platf
 
   const created = await pool.query(
     'INSERT INTO customers (id, name, platform, contact_handle, last_contact_at) VALUES ($1, $2, $3, $4, now()) RETURNING *',
-    [`customer-${randomUUID()}`, input.name, input.platform, input.contactHandle],
+    [`customer-${randomUUID()}`, name, input.platform, input.contactHandle],
   );
   return mapCustomer(created.rows[0]);
 }

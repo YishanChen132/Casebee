@@ -13,7 +13,8 @@
     "smoke": "tsx src/scripts/smoke.ts",
     "accuracy": "tsx src/scripts/extractionAccuracy.ts",
     "classification:p4": "tsx src/scripts/classificationP4.ts",
-    "comparison:p5": "tsx src/scripts/p5WeakFieldComparison.ts"
+    "comparison:p5": "tsx src/scripts/p5WeakFieldComparison.ts",
+    "repair:html-polluted-cases": "tsx src/scripts/repairHtmlPollutedCases.ts"
   },
   "dependencies": {
     "@casebee/shared": "0.1.0",

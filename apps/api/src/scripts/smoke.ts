@@ -1,3 +1,4 @@
+import {Buffer} from 'node:buffer';
 import {createAlert, resolveAlert} from '../repositories/alertsRepository.js';
 import {findReviewHistoryByMessageId, findReviewItemsByMessageId, resolveReviewItem} from '../repositories/aiReviewRepository.js';
 import {findAllCases, findCaseDetailById, updateCaseFields} from '../repositories/casesRepository.js';
@@ -11,7 +12,7 @@ import {mapCaseStatusToStage, normalizeMissingFields, stageRequiredFields} from 
 import {analyzeMessage} from '../services/aiService.js';
 import {inferCustomerName} from '../services/customerNameInference.js';
 import {extractMessage} from '../services/extractionService.js';
-import {getGmailStatus} from '../services/gmailService.js';
+import {extractGmailBodyText, getGmailStatus} from '../services/gmailService.js';
 import {importMessage} from '../services/messageImportService.js';
 import {reanalyzeMessage} from '../services/messageReanalysisService.js';
 import {getRuleScheduleStatus, runReplyOverdueRules, runRules} from '../services/ruleEngine.js';
@@ -38,6 +39,23 @@ async function main() {
   assert(normalizeMissingFields(['materials', 'reference', 'quoteAmount', 'deadline']).join(',') === 'quote_amount,expected_deadline,required_materials', 'Expected missing field aliases to normalize in taxonomy order.');
   assert(['inquiry', 'quotation', 'confirmed', 'execution', 'completed', 'cancelled'].includes(cases[0].caseStage), 'Expected case serialization to include standard caseStage.');
   assert(stageRequiredFields.completed.length === 0 && stageRequiredFields.cancelled.length === 0, 'Expected completed and cancelled stages not to require missing fields.');
+
+  const htmlOnly = extractGmailBodyText({mimeType: 'text/html', body: {data: Buffer.from('<b><br></b><p>我們想委託包裝設計</p><ul><li>預算 NT$ 35,000</li><li>10/05 完稿</li></ul><div>--<br>簽名檔</div>').toString('base64url')}});
+  assert(htmlOnly.source === 'text/html' && htmlOnly.wasHtml, 'Expected HTML-only Gmail body to be normalized from HTML.');
+  assert(htmlOnly.text.includes('我們想委託包裝設計') && htmlOnly.text.includes('預算 NT$ 35,000') && htmlOnly.text.includes('10/05 完稿'), 'Expected HTML body text to preserve business facts.');
+  assert(!htmlOnly.text.includes('<br>') && !htmlOnly.text.includes('<b>'), 'Expected HTML tags to be removed from normalized body.');
+
+  const multipart = extractGmailBodyText({mimeType: 'multipart/alternative', parts: [
+    {mimeType: 'text/html', body: {data: Buffer.from('<p>HTML 版本 99999</p>').toString('base64url')}},
+    {mimeType: 'text/plain', body: {data: Buffer.from('純文字版本 12000').toString('base64url')}},
+  ]});
+  assert(multipart.source === 'text/plain' && multipart.text === '純文字版本 12000', 'Expected multipart Gmail to prefer text/plain over HTML.');
+
+  const entityBody = extractGmailBodyText({mimeType: 'text/html', body: {data: Buffer.from('<p>報價 &amp; 授權範圍&nbsp;確認</p>').toString('base64url')}});
+  assert(entityBody.text === '報價 & 授權範圍 確認', 'Expected HTML entities to decode safely.');
+
+  const htmlCustomer = inferCustomerName({from: '國立清華大學教務處招生策略中心 <adms@my.nthu.edu.tw>', senderName: '國立清華大學教務處招生策略中心', senderEmail: 'adms@my.nthu.edu.tw', subject: '推薦完成通知函', text: '<pre><b>國立清華大學 招生策略中心 敬上<b><br></pre>'});
+  assert(htmlCustomer.includes('國立清華大學') && !htmlCustomer.includes('<') && !/\bbr\b/i.test(htmlCustomer), `Expected HTML-only candidate to become a safe organization name, got ${htmlCustomer}.`);
 
   const messages = await findAllMessages();
   assert(messages.length > 0, 'Expected at least one message. Run npm run db:seed first.');

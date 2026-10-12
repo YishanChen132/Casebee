@@ -1,3 +1,5 @@
+import {isMeaningfulDisplayText, sanitizeDisplayText} from './emailBodyNormalizer.js';
+
 const knownAliases: Array<{pattern: RegExp; name: string}> = [
   {pattern: /fupin|富品/i, name: '富品建設'},
 ];
@@ -19,7 +21,7 @@ const noisyNamePatterns = [
 ];
 
 function cleanCandidateName(value: string) {
-  const cleaned = noisyNamePatterns.reduce((current, pattern) => current.replace(pattern, ''), value)
+  const cleaned = noisyNamePatterns.reduce((current, pattern) => current.replace(pattern, ''), sanitizeDisplayText(value))
     .replace(/[「」【】]/g, '')
     .replace(/[-_\.]+/g, ' ')
     .replace(/\s+/g, ' ')
@@ -38,7 +40,7 @@ function extractOrganizationFromText(text: string) {
     const match = text.match(pattern);
     if (match?.[1]) {
       const candidate = cleanCandidateName(match[1]);
-      if (!/^(我們|我想|想|需要|您好|不好意思|Logo|Reels|網站|官網|IG|社群|產品攝影|包裝|簡報|DM)/i.test(candidate)) {
+      if (isMeaningfulDisplayText(candidate) && !/^(我們|我想|想|需要|您好|不好意思|Logo|Reels|網站|官網|IG|社群|產品攝影|包裝|簡報|DM)/i.test(candidate)) {
         return candidate;
       }
     }
@@ -64,7 +66,7 @@ export function inferCustomerName(input: {from?: string; senderName: string; sen
   }
 
   const cleanedSenderName = cleanCandidateName(senderName);
-  if (cleanedSenderName && cleanedSenderName !== senderEmail && !/^[a-z0-9._%+-]+@[a-z0-9.-]+$/i.test(cleanedSenderName)) {
+  if (isMeaningfulDisplayText(cleanedSenderName) && cleanedSenderName !== senderEmail && !/^[a-z0-9._%+-]+@[a-z0-9.-]+$/i.test(cleanedSenderName)) {
     return cleanedSenderName;
   }
 

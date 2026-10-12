@@ -4,6 +4,7 @@ import {findSenderEmailExclusionRule} from '../repositories/messageExclusionRule
 import {findMessageByGmailMessageId} from '../repositories/messagesRepository.js';
 import {getPlatformConnection, markPlatformSynced, upsertPlatformConnection} from '../repositories/platformConnectionsRepository.js';
 import {inferCustomerName} from './customerNameInference.js';
+import {normalizeEmailBody} from './emailBodyNormalizer.js';
 import {importMessage} from './messageImportService.js';
 
 const gmailScopes = ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/userinfo.email'];
@@ -50,25 +51,31 @@ function decodeBase64Url(data?: string | null) {
   return Buffer.from(data.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
 }
 
-function extractPlainText(payload?: {body?: {data?: string | null}; parts?: Array<{mimeType?: string | null; body?: {data?: string | null}; parts?: unknown[]}>}): string {
+type GmailPayloadPart = {mimeType?: string | null; body?: {data?: string | null}; parts?: GmailPayloadPart[]};
+
+function collectBodyParts(payload?: GmailPayloadPart): {plainText: string[]; htmlText: string[]} {
+  const collected = {plainText: [] as string[], htmlText: [] as string[]};
   if (!payload) {
-    return '';
+    return collected;
   }
+  const mimeType = payload.mimeType?.toLowerCase() ?? '';
   if (payload.body?.data) {
-    return decodeBase64Url(payload.body.data);
+    const decoded = decodeBase64Url(payload.body.data);
+    if (mimeType === 'text/plain') collected.plainText.push(decoded);
+    else if (mimeType === 'text/html') collected.htmlText.push(decoded);
+    else if (!payload.parts?.length) collected.plainText.push(decoded);
   }
   for (const part of payload.parts ?? []) {
-    if (part.mimeType === 'text/plain' && part.body?.data) {
-      return decodeBase64Url(part.body.data);
-    }
+    const nested = collectBodyParts(part);
+    collected.plainText.push(...nested.plainText);
+    collected.htmlText.push(...nested.htmlText);
   }
-  for (const part of payload.parts ?? []) {
-    const nested: string = extractPlainText(part as Parameters<typeof extractPlainText>[0]);
-    if (nested) {
-      return nested;
-    }
-  }
-  return '';
+  return collected;
+}
+
+export function extractGmailBodyText(payload?: GmailPayloadPart) {
+  const parts = collectBodyParts(payload);
+  return normalizeEmailBody({plainText: parts.plainText.join('\n\n'), htmlText: parts.htmlText.join('\n\n')});
 }
 
 function headerValue(headers: Array<{name?: string | null; value?: string | null}> | undefined, name: string) {
@@ -211,7 +218,8 @@ export async function pollGmailMessages() {
       const from = headerValue(headers, 'from') || 'Unknown Sender';
       const subject = headerValue(headers, 'subject');
       const senderEmail = parseSenderEmail(from);
-      const text = [subject ? `Subject: ${subject}` : '', extractPlainText(message.data.payload)].filter(Boolean).join('\n\n').trim();
+      const body = extractGmailBodyText(message.data.payload as GmailPayloadPart | undefined);
+      const text = [subject ? `Subject: ${subject}` : '', body.text].filter(Boolean).join('\n\n').trim();
 
       if (!text) {
         emptyCount += 1;
@@ -238,7 +246,7 @@ export async function pollGmailMessages() {
           text,
           timestamp: message.data.internalDate ? new Date(Number(message.data.internalDate)).toISOString() : undefined,
           threadId: message.data.threadId ?? undefined,
-          rawPayload: {gmailMessageId: item.id, threadId: message.data.threadId ?? null, subject, originalSenderName: parseSenderName(from)},
+          rawPayload: {gmailMessageId: item.id, threadId: message.data.threadId ?? null, subject, originalSenderName: parseSenderName(from), bodySource: body.source, bodyWasHtml: body.wasHtml, originalBody: body.original},
         }),
       );
     } catch (error) {
