@@ -3,10 +3,6 @@
 Casebee 是為自由工作者設計的訊息驅動案件管理系統。它可以把 Gmail、手動輸入與 demo 訊息整理成可追蹤的案件，並支援 AI 欄位萃取、回覆建議、規則警示、商業風險檢查、RAG 相似案件輔助，以及視覺化案件看板。
 
 ## 目前目標
-
-- 兩週內完成可操作的 MVP。
-- 一個月內準備穩定 demo 版本。
-- UI 風格參考 `school/Ifm/frontend`。
 - 近期優先以 Gmail 作為真實資料來源。
 - LINE 保留為後續整合項目；目前 LINE endpoint 是 placeholder，不屬於短期 demo 範圍。
 
