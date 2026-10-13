@@ -108,6 +108,7 @@ export type RegistrySearchResult = {
   queriedAt: string;
   source: 'gcis';
   hint: string | null;
+  warnings: string[];
 };
 
 type LooseRecord = Record<string, unknown>;
@@ -164,21 +165,26 @@ async function fetchGcisList(endpoint: string, filter: string, top: number): Pro
     throw new Error(`GCIS keyword lookup failed with HTTP ${response.status}`);
   }
 
-  // 無結果時可能回空內容，先讀文字再解析，避免 response.json() 直接爆錯
   const text = (await response.text()).trim();
   if (!text) {
     return [];
+  }
+
+  // GCIS 的錯誤（例如 IP 未授權）是純文字，不是 JSON
+  if (!text.startsWith('[')) {
+    throw new Error(`GCIS 回應非 JSON：${text.slice(0, 120)}`);
   }
 
   const data = JSON.parse(text) as unknown;
   return Array.isArray(data) ? (data as LooseRecord[]) : [];
 }
 
-export async function searchGcisByKeyword(keyword: string, options: {statusCode?: string; top?: number} = {}) {
-  // 只留文字與數字，避免特殊字元破壞 $filter 語法
+export type KeywordSearchOutcome = {candidates: RegistryCandidate[]; warnings: string[]};
+
+export async function searchGcisByKeyword(keyword: string, options: {statusCode?: string; top?: number} = {}): Promise<KeywordSearchOutcome> {
   const safeKeyword = keyword.replace(/[^\p{L}\p{N}]/gu, '');
   if (safeKeyword.length < 2) {
-    return [];
+    return {candidates: [], warnings: []};
   }
 
   const statusCode = options.statusCode ?? '01';
@@ -186,19 +192,30 @@ export async function searchGcisByKeyword(keyword: string, options: {statusCode?
   const companyEndpoint = process.env.GCIS_COMPANY_KEYWORD_ENDPOINT ?? defaultCompanyKeywordEndpoint;
   const businessEndpoint = process.env.GCIS_BUSINESS_KEYWORD_ENDPOINT ?? defaultBusinessKeywordEndpoint;
 
-  const [companies, businesses] = await Promise.all([
+  const [companyResult, businessResult] = await Promise.allSettled([
     fetchGcisList(companyEndpoint, `Company_Name like ${safeKeyword} and Company_Status eq ${statusCode}`, top),
     fetchGcisList(businessEndpoint, `Business_Name like ${safeKeyword} and Business_Current_Status eq ${statusCode}`, top),
   ]);
 
-  const candidates = [
-    ...companies.map(mapCompanyCandidate),
-    ...businesses.map(mapBusinessCandidate),
-  ].filter((item): item is RegistryCandidate => item !== null);
+  const warnings: string[] = [];
+  const all: RegistryCandidate[] = [];
 
-  // 同統編 + 同類型只留一筆
+  if (companyResult.status === 'fulfilled') {
+    all.push(...companyResult.value.map(mapCompanyCandidate).filter((item): item is RegistryCandidate => item !== null));
+  } else {
+    console.error('[GCIS] company keyword lookup failed:', companyResult.reason);
+    warnings.push('公司登記查詢失敗，結果可能不完整。');
+  }
+
+  if (businessResult.status === 'fulfilled') {
+    all.push(...businessResult.value.map(mapBusinessCandidate).filter((item): item is RegistryCandidate => item !== null));
+  } else {
+    console.error('[GCIS] business keyword lookup failed:', businessResult.reason);
+    warnings.push('商業登記查詢暫時無法使用，結果只包含公司登記。');
+  }
+
   const seen = new Set<string>();
-  return candidates.filter((item) => {
+  const candidates = all.filter((item) => {
     const key = `${item.entityType}:${item.taxId ?? item.name}`;
     if (seen.has(key)) {
       return false;
@@ -206,12 +223,15 @@ export async function searchGcisByKeyword(keyword: string, options: {statusCode?
     seen.add(key);
     return true;
   });
+
+  return {candidates, warnings};
 }
 
 export async function screenRegistry(input: {taxId?: string; keyword?: string}): Promise<RegistrySearchResult> {
   const taxId = input.taxId?.trim() || null;
   const keyword = input.keyword?.trim() || null;
   let candidates: RegistryCandidate[] = [];
+  let warnings: string[] = [];
 
   if (taxId && /^\d{8}$/.test(taxId)) {
     const profile = await findGcisBusinessProfile({taxId});
@@ -228,15 +248,21 @@ export async function screenRegistry(input: {taxId?: string; keyword?: string}):
   }
 
   if (candidates.length === 0 && keyword) {
-    candidates = await searchGcisByKeyword(keyword);
+    const outcome = await searchGcisByKeyword(keyword);
+    candidates = outcome.candidates;
+    warnings = outcome.warnings;
   }
 
   const status: RegistryLookupStatus = candidates.length === 0 ? 'not_found' : candidates.length === 1 ? 'found' : 'multiple';
-  const hint = status === 'not_found'
-    ? '查無登記資料，請請對方補充統一編號，或確認公司名稱是否正確。'
-    : status === 'multiple'
-      ? '找到多筆候選，請依統編、地址或負責人確認是哪一個登記主體。'
-      : null;
 
-  return {status, candidates, query: {taxId, keyword}, queriedAt: new Date().toISOString(), source: 'gcis', hint};
+  let hint: string | null = null;
+  if (status === 'not_found') {
+    hint = warnings.length > 0
+      ? '部分登記來源無法查詢，不能據此判定查無此公司。請請對方補充統一編號，或稍後再試。'
+      : '查無登記資料，請請對方補充統一編號，或確認公司名稱是否正確。';
+  } else if (status === 'multiple') {
+    hint = '找到多筆候選，請依統編、地址或負責人確認是哪一個登記主體。';
+  }
+
+  return {status, candidates, query: {taxId, keyword}, queriedAt: new Date().toISOString(), source: 'gcis', hint, warnings};
 }
