@@ -1,4 +1,4 @@
-import type {BusinessProfile} from '@casebee/shared';
+import type {BusinessProfile, RegistryCandidate, RegistryLookupStatus, RegistrySearchResult} from '@casebee/shared';
 
 type GcisCompanyRecord = {
   Business_Accounting_NO?: string;
@@ -89,27 +89,6 @@ export async function findGcisBusinessProfile(query: {taxId?: string}) {
 
 const defaultCompanyKeywordEndpoint = 'https://data.gcis.nat.gov.tw/od/data/api/6BBA2268-1367-4B42-9CCA-BC17499EBE8C';
 const defaultBusinessKeywordEndpoint = 'https://data.gcis.nat.gov.tw/od/data/api/A1B4CBFF-2D3A-409B-8A78-2AD94F63AE4A';
-
-export type RegistryLookupStatus = 'found' | 'not_found' | 'multiple';
-
-export type RegistryCandidate = {
-  taxId: string | null;
-  name: string;
-  entityType: 'company' | 'business';
-  statusDesc: string | null;
-  address: string | null;
-  responsibleName: string | null;
-};
-
-export type RegistrySearchResult = {
-  status: RegistryLookupStatus;
-  candidates: RegistryCandidate[];
-  query: {taxId: string | null; keyword: string | null};
-  queriedAt: string;
-  source: 'gcis';
-  hint: string | null;
-  warnings: string[];
-};
 
 type LooseRecord = Record<string, unknown>;
 
@@ -258,7 +237,7 @@ export async function screenRegistry(input: {taxId?: string; keyword?: string}):
   let hint: string | null = null;
   if (status === 'not_found') {
     hint = warnings.length > 0
-      ? '部分登記來源無法查詢，不能據此判定查無此公司。請請對方補充統一編號，或稍後再試。'
+      ? '部分登記來源無法查詢，不能據此判定查無此公司。請對方補充統一編號，或稍後再試。'
       : '查無登記資料，請請對方補充統一編號，或確認公司名稱是否正確。';
   } else if (status === 'multiple') {
     hint = '找到多筆候選，請依統編、地址或負責人確認是哪一個登記主體。';

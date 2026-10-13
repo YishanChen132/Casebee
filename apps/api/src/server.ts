@@ -10,6 +10,7 @@ import {excludeMessage, findAllMessages, findReplyStatusHistoryByMessageId, setR
 import {createRagExample, deactivateRagExample, findAllRagExamples} from './repositories/ragExamplesRepository.js';
 import {findReviewHistoryByMessageId, findReviewItemsByMessageId, resolveReviewItem} from './repositories/aiReviewRepository.js';
 import {enrichBusinessRisk, getBusinessRiskSummary} from './services/businessRiskService.js';
+import {screenRegistry} from './services/gcisBusinessRegistryProvider.js';
 import {importDemoMessages} from './services/demoImportService.js';
 import {createGmailAuthUrl, getGmailStatus, handleGmailCallback, pollGmailMessages} from './services/gmailService.js';
 import {startGmailPollingScheduler} from './services/gmailPollingScheduler.js';
@@ -389,6 +390,28 @@ app.post('/api/business/enrich', async (request, response) => {
     });
   } catch (error) {
     response.status(500).json({error: {message: error instanceof Error ? error.message : 'Failed to enrich business risk'}});
+  }
+});
+
+app.post('/api/business/screen', async (request, response) => {
+  const payload = request.body as {taxId?: unknown; keyword?: unknown};
+  const taxId = typeof payload.taxId === 'string' ? payload.taxId.trim() : '';
+  const keyword = typeof payload.keyword === 'string' ? payload.keyword.trim() : '';
+
+  if (!taxId && !keyword) {
+    response.status(400).json({error: {message: 'taxId or keyword is required'}});
+    return;
+  }
+
+  if (taxId && !keyword && !/^\d{8}$/.test(taxId)) {
+    response.status(400).json({error: {message: 'taxId must be 8 digits'}});
+    return;
+  }
+
+  try {
+    response.json({data: await screenRegistry({taxId: taxId || undefined, keyword: keyword || undefined})});
+  } catch (error) {
+    response.status(500).json({error: {message: error instanceof Error ? error.message : 'Failed to screen registry'}});
   }
 });
 

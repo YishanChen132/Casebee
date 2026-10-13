@@ -407,3 +407,24 @@ export interface BusinessRiskSummary {
   unverified: number;
   averageScore: number | null;
 }
+
+export type RegistryLookupStatus = 'found' | 'not_found' | 'multiple';
+
+export interface RegistryCandidate {
+  taxId: string | null;
+  name: string;
+  entityType: 'company' | 'business';
+  statusDesc: string | null;
+  address: string | null;
+  responsibleName: string | null;
+}
+
+export interface RegistrySearchResult {
+  status: RegistryLookupStatus;
+  candidates: RegistryCandidate[];
+  query: {taxId: string | null; keyword: string | null};
+  queriedAt: string;
+  source: 'gcis';
+  hint: string | null;
+  warnings: string[];
+}
