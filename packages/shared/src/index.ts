@@ -427,6 +427,7 @@ export interface RegistrySearchResult {
   source: 'gcis';
   hint: string | null;
   warnings: string[];
+  truncated: boolean;
 }
 
 export interface RegistryBusinessItem {

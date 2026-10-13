@@ -158,12 +158,12 @@ async function fetchGcisList(endpoint: string, filter: string, top: number): Pro
   return Array.isArray(data) ? (data as LooseRecord[]) : [];
 }
 
-export type KeywordSearchOutcome = {candidates: RegistryCandidate[]; warnings: string[]};
+export type KeywordSearchOutcome = {candidates: RegistryCandidate[]; warnings: string[]; truncated: boolean};
 
 export async function searchGcisByKeyword(keyword: string, options: {statusCode?: string; top?: number} = {}): Promise<KeywordSearchOutcome> {
   const safeKeyword = keyword.replace(/[^\p{L}\p{N}]/gu, '');
   if (safeKeyword.length < 2) {
-    return {candidates: [], warnings: []};
+    return {candidates: [], warnings: [], truncated: false};
   }
 
   const statusCode = options.statusCode ?? '01';
@@ -176,6 +176,9 @@ export async function searchGcisByKeyword(keyword: string, options: {statusCode?
     fetchGcisList(businessEndpoint, `Business_Name like ${safeKeyword} and Business_Current_Status eq ${statusCode}`, top),
   ]);
 
+  const truncated =
+    (companyResult.status === 'fulfilled' && companyResult.value.length >= top) ||
+    (businessResult.status === 'fulfilled' && businessResult.value.length >= top);
   const warnings: string[] = [];
   const all: RegistryCandidate[] = [];
 
@@ -203,7 +206,7 @@ export async function searchGcisByKeyword(keyword: string, options: {statusCode?
     return true;
   });
 
-  return {candidates, warnings};
+  return {candidates, warnings, truncated};
 }
 
 export async function screenRegistry(input: {taxId?: string; keyword?: string}): Promise<RegistrySearchResult> {
@@ -211,6 +214,7 @@ export async function screenRegistry(input: {taxId?: string; keyword?: string}):
   const keyword = input.keyword?.trim() || null;
   let candidates: RegistryCandidate[] = [];
   let warnings: string[] = [];
+  let truncated = false;
 
   if (taxId && /^\d{8}$/.test(taxId)) {
     const profile = await findGcisBusinessProfile({taxId});
@@ -243,7 +247,7 @@ export async function screenRegistry(input: {taxId?: string; keyword?: string}):
     hint = '找到多筆候選，請依統編、地址或負責人確認是哪一個登記主體。';
   }
 
-  return {status, candidates, query: {taxId, keyword}, queriedAt: new Date().toISOString(), source: 'gcis', hint, warnings};
+  return {status, candidates, query: {taxId, keyword}, queriedAt: new Date().toISOString(), source: 'gcis', hint, warnings, truncated};
 }
 
 // ===== 合作對象背景卡 =====

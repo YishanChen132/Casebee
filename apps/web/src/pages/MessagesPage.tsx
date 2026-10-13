@@ -334,6 +334,7 @@ const refreshAll = async () => {
     };
   }, [selectedMessage?.id, selectedMessage?.threadId, selectedMessage?.text]);
 
+    // 換訊息時，才清掉查詢卡
   useEffect(() => {
     registryRequestId.current += 1;
     backgroundRequestId.current += 1;
@@ -343,8 +344,14 @@ const refreshAll = async () => {
     setIsScreening(false);
     setRegistryResult(null);
     setRegistryStatus('');
-    setRegistryTaxId(selectedTaxId ?? '');
-    setRegistryKeyword(visibleExtraction?.clientName ?? selectedMessage?.senderName ?? '');
+    setRegistryTaxId('');
+    setRegistryKeyword('');
+  }, [selectedMessage?.id]);
+
+  // 帶入預設的統編與名稱：只在欄位還是空的時候才帶，不蓋掉使用者輸入的內容
+  useEffect(() => {
+    setRegistryTaxId((current) => current || (selectedTaxId ?? ''));
+    setRegistryKeyword((current) => current || (visibleExtraction?.clientName ?? selectedMessage?.senderName ?? ''));
   }, [selectedMessage?.id, selectedTaxId, visibleExtraction?.clientName, selectedMessage?.senderName]);
 
 
@@ -835,7 +842,7 @@ const refreshAll = async () => {
                 <div className="registry-result">
                   <div className={`registry-result__summary registry-result__summary--${registryResult.status}`}>
                     <strong>{registryStatusLabels[registryResult.status]}</strong>
-                    <span>{registryResult.candidates.length > 0 ? `共 ${registryResult.candidates.length} 筆登記資料` : '沒有符合的登記資料'}</span>
+                    <span>{registryResult.candidates.length > 0 ? `${registryResult.truncated ? '至少 ' : '共 '}${registryResult.candidates.length} 筆登記資料` : '沒有符合的登記資料'}</span>
                   </div>
 
                   {registryResult.candidates.map((item) => (
@@ -858,6 +865,7 @@ const refreshAll = async () => {
                     </article>
                   ))}
 
+                  {registryResult.truncated ? <p className="registry-note registry-note--warning">結果可能不只這些，已達單次顯示上限。請補充統一編號或更完整的名稱縮小範圍。</p> : null}
                   {registryResult.hint ? <p className="registry-note">{registryResult.hint}</p> : null}
                   {registryResult.warnings.map((warning) => <p key={warning} className="registry-note registry-note--warning">{warning}</p>)}
                 </div>
