@@ -1,0 +1,232 @@
+/* ===== 客戶真偽篩選卡片 ===== */
+.registry-card {
+  --registry-accent: #1f9d6a;
+  --registry-accent-hover: #178457;
+  --registry-text: #1f2937;
+  --registry-muted: #6b7280;
+  --registry-border: #e5e7eb;
+
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+  margin-top: 16px;
+  background: #ffffff;
+  border: 1px solid var(--registry-border);
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+  color: var(--registry-text);
+}
+
+.registry-card h3,
+.registry-card p,
+.registry-card dl,
+.registry-card dd {
+  margin: 0;
+}
+
+.registry-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.registry-card__header h3 {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.registry-card__header p {
+  margin-top: 4px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--registry-muted);
+}
+
+.registry-card__badge {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--registry-accent);
+  background: #e8f6ef;
+  border-radius: 999px;
+}
+
+.registry-card__form {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+
+.registry-field {
+  display: grid;
+  gap: 10px;
+}
+
+.registry-field span {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--registry-muted);
+}
+
+.registry-field input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 40px;
+  padding: 0 12px;
+  font-size: 14px;
+  color: var(--registry-text);
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.registry-field input::placeholder {
+  color: #9ca3af;
+}
+
+.registry-field input:focus {
+  border-color: var(--registry-accent);
+  box-shadow: 0 0 0 3px rgba(31, 157, 106, 0.18);
+}
+
+.registry-card__submit {
+  justify-self: start;
+  height: 40px;
+  padding: 0 22px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #ffffff;
+  background: var(--registry-accent);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.registry-card__submit:hover:not(:disabled) {
+  background: var(--registry-accent-hover);
+}
+
+.registry-card__submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.registry-card__status {
+  font-size: 13px;
+  color: #b45309;
+}
+
+.registry-result {
+  display: grid;
+  gap: 12px;
+}
+
+.registry-result__summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  font-size: 14px;
+  border-radius: 8px;
+}
+
+.registry-result__summary strong {
+  font-size: 15px;
+}
+
+.registry-result__summary--found {
+  color: #166534;
+  background: #ecfdf3;
+}
+
+.registry-result__summary--not_found {
+  color: #92400e;
+  background: #fffbeb;
+}
+
+.registry-result__summary--multiple {
+  color: #1e40af;
+  background: #eff6ff;
+}
+
+.registry-candidate {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px;
+  background: #fafafa;
+  border: 1px solid var(--registry-border);
+  border-radius: 10px;
+}
+
+.registry-candidate__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.registry-candidate__top strong {
+  font-size: 15px;
+}
+
+.registry-chip {
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #4b5563;
+  background: #e5e7eb;
+  border-radius: 999px;
+}
+
+.registry-candidate__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px 16px;
+}
+
+.registry-candidate__grid dt {
+  font-size: 12px;
+  color: var(--registry-muted);
+}
+
+.registry-candidate__grid dd {
+  margin-top: 2px;
+  font-size: 14px;
+  word-break: break-all;
+}
+
+.registry-candidate__wide {
+  grid-column: 1 / -1;
+}
+
+.registry-note {
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #374151;
+  background: #f3f4f6;
+  border-radius: 8px;
+}
+
+.registry-note--warning {
+  color: #92400e;
+  background: #fffbeb;
+}
+
+.registry-card__footer {
+  display: grid;
+  gap: 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--registry-border);
+}
+
+.registry-card__footer p {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--registry-muted);
+}

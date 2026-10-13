@@ -3,6 +3,7 @@ import {missingFieldDisplayLabels} from '@casebee/shared';
 import type {AiReviewDetail, AiReviewItem, BusinessProfile, BusinessRiskScore, CaseDetail, MessageEvent, MessageReplyStatusHistoryItem, Platform, RegistrySearchResult, ReplyStatus} from '@casebee/shared';
 import {enrichBusinessRisk, excludeMessage, getCaseDetail, getGmailAuthUrl, getGmailStatus, getMessageReplyStatusHistory, getMessageReview, getMessages, importMessage, pollGmail, reanalyzeMessage, resolveReview,screenRegistry,  updateMessageReplyStatus, type ImportPipelineResult} from '../services/api';
 import type {NavigateToPage} from '../App';
+import '../registry-card.css';
 
 const fieldLabels: Record<string, string> = {
   ...missingFieldDisplayLabels,
@@ -445,10 +446,12 @@ const refreshAll = async () => {
     const taxId = registryTaxId.trim();
 
     if (!keyword && !taxId) {
+      setRegistryResult(null);
       setRegistryStatus('請輸入統一編號或公司名稱關鍵字。');
       return;
     }
     if (!keyword && !/^\d{8}$/.test(taxId)) {
+      setRegistryResult(null);
       setRegistryStatus('統一編號需為 8 碼數字。');
       return;
     }
@@ -725,40 +728,63 @@ const refreshAll = async () => {
           ) : (
             <p>目前沒有訊息。</p>
           )}
-          <section className="business-risk-panel registry-screen-panel">
-                <div className="business-risk-panel__header">
+          <section className="registry-card">
+              <header className="registry-card__header">
+                <div>
                   <h3>客戶真偽篩選</h3>
+                  <p>用統編或名稱查公司登記，確認對方是不是登記有案的公司。</p>
                 </div>
-                <p>收到不認識的合作邀請時，用統編或名稱查公司登記。登記資料只能證明這間公司存在，對方有沒有被授權，仍要用公司官方聯絡管道確認。目前只查登記狀態為「核准設立」的公司。</p>
-                <label>
-                  統一編號
+                <span className="registry-card__badge">經濟部商工登記</span>
+              </header>
+
+              <div className="registry-card__form">
+                <label className="registry-field">
+                  <span>統一編號</span>
                   <input value={registryTaxId} onChange={(event) => setRegistryTaxId(event.target.value)} inputMode="numeric" maxLength={8} placeholder="8 碼，可留空" />
                 </label>
-                <label>
-                  公司名稱關鍵字
+                <label className="registry-field">
+                  <span>公司名稱關鍵字</span>
                   <input value={registryKeyword} onChange={(event) => setRegistryKeyword(event.target.value)} placeholder="例如 品喬室內裝修設計" />
                 </label>
-                <button type="button" onClick={handleScreenRegistry} disabled={isScreening}>{isScreening ? '查詢中...' : '查詢登記資料'}</button>
-                {registryStatus ? <small>{registryStatus}</small> : null}
-                {registryResult ? (
-                  <div className="registry-screen-result">
-                    <strong>查詢結果：{registryStatusLabels[registryResult.status]}</strong>
-                    {registryResult.candidates.map((item) => (
-                      <article key={`${item.entityType}-${item.taxId ?? item.name}`} className="similar-card">
-                        <div className="similar-card__top">
-                          <strong>{item.name}</strong>
-                          <span>{item.entityType === 'company' ? '公司' : '商業'}</span>
-                        </div>
-                        <p>統編 {item.taxId ?? '未提供'}｜登記狀態 {item.statusDesc ?? '未提供'}</p>
-                        <p>{item.address ?? '地址未提供'}｜負責人 {item.responsibleName ?? '未提供'}</p>
-                      </article>
-                    ))}
-                    {registryResult.hint ? <p>{registryResult.hint}</p> : null}
-                    {registryResult.warnings.map((warning) => <small key={warning}>{warning}</small>)}
-                    <small>查詢時間 {new Date(registryResult.queriedAt).toLocaleString('zh-TW')}｜來源：經濟部商工行政資料開放平臺｜尚未確認為對方本人</small>
+                <button type="button" className="registry-card__submit" onClick={handleScreenRegistry} disabled={isScreening}>
+                  {isScreening ? '查詢中...' : '查詢登記資料'}
+                </button>
+              </div>
+
+              {registryStatus ? <p className="registry-card__status">{registryStatus}</p> : null}
+
+              {registryResult ? (
+                <div className="registry-result">
+                  <div className={`registry-result__summary registry-result__summary--${registryResult.status}`}>
+                    <strong>{registryStatusLabels[registryResult.status]}</strong>
+                    <span>{registryResult.candidates.length > 0 ? `共 ${registryResult.candidates.length} 筆登記資料` : '沒有符合的登記資料'}</span>
                   </div>
-                ) : null}
-              </section>
+
+                  {registryResult.candidates.map((item) => (
+                    <article key={`${item.entityType}-${item.taxId ?? item.name}`} className="registry-candidate">
+                      <div className="registry-candidate__top">
+                        <strong>{item.name}</strong>
+                        <span className="registry-chip">{item.entityType === 'company' ? '公司' : '商業'}</span>
+                      </div>
+                      <dl className="registry-candidate__grid">
+                        <div><dt>統一編號</dt><dd>{item.taxId ?? '未提供'}</dd></div>
+                        <div><dt>登記狀態</dt><dd>{item.statusDesc ?? '未提供'}</dd></div>
+                        <div><dt>負責人</dt><dd>{item.responsibleName ?? '未提供'}</dd></div>
+                        <div className="registry-candidate__wide"><dt>登記地址</dt><dd>{item.address ?? '未提供'}</dd></div>
+                      </dl>
+                    </article>
+                  ))}
+
+                  {registryResult.hint ? <p className="registry-note">{registryResult.hint}</p> : null}
+                  {registryResult.warnings.map((warning) => <p key={warning} className="registry-note registry-note--warning">{warning}</p>)}
+                </div>
+              ) : null}
+
+              <footer className="registry-card__footer">
+                <p>登記資料只能證明這間公司存在，不代表對方已獲授權，請用公司官方聯絡管道確認。目前只查登記狀態為「核准設立」的公司。</p>
+                {registryResult ? <p>查詢時間 {new Date(registryResult.queriedAt).toLocaleString('zh-TW')}｜資料來源：經濟部商工行政資料開放平臺｜尚未確認為對方本人</p> : null}
+              </footer>
+            </section>
           {selectedMessageIsGmail ? (
             <div className="message-exclusion-box">
               <div>
