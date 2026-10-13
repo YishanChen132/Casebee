@@ -1,6 +1,7 @@
 import {useEffect, useState} from 'react';
 import type {Platform, RagExample, RuleScheduleStatus} from '@casebee/shared';
-import {createRagExample, deactivateRagExample, getGmailAuthUrl, getGmailStatus, getRagExamples, getRuleStatus, pollGmail, runRules} from '../services/api';
+import {createRagExample, deactivateRagExample, getGmailAuthUrl, getGmailStatus, getMessageExclusionRules, getRagExamples, getRuleStatus, pollGmail, runRules, updateMessageExclusionRule, type MessageExclusionRule} from '../services/api';
+import {displayText} from '../utils/displayText';
 
 const platformOptions: Platform[] = ['Gmail', 'LINE', 'Instagram', 'Manual'];
 
@@ -17,6 +18,8 @@ export function SettingsPage() {
   const [ruleStatus, setRuleStatus] = useState<RuleScheduleStatus | null>(null);
   const [ragExamples, setRagExamples] = useState<RagExample[]>([]);
   const [ragStatus, setRagStatus] = useState('RAG 知識庫讀取中');
+  const [exclusionRules, setExclusionRules] = useState<MessageExclusionRule[]>([]);
+  const [exclusionRuleStatus, setExclusionRuleStatus] = useState('寄件者排除規則讀取中');
   const emptyRagForm = {title: '', platform: 'Manual' as Platform, projectItem: '', quoteAmount: '', outcome: '', summary: '', replyExample: '', caseType: '', projectAliases: '', typicalMissingFields: '', quoteRangeMin: '', quoteRangeMax: '', successPattern: ''};
   const [ragForm, setRagForm] = useState(emptyRagForm);
   const [savingRag, setSavingRag] = useState(false);
@@ -51,6 +54,12 @@ export function SettingsPage() {
       })
       .catch(() => setRagStatus('無法讀取 RAG 歷史案例'));
     getRuleStatus().then(setRuleStatus).catch(() => setRuleStatus(null));
+    getMessageExclusionRules()
+      .then((items) => {
+        setExclusionRules(items);
+        setExclusionRuleStatus(`已載入 ${items.length} 筆寄件者排除規則`);
+      })
+      .catch(() => setExclusionRuleStatus('無法讀取寄件者排除規則'));
   }, []);
 
   useEffect(() => {
@@ -169,6 +178,17 @@ export function SettingsPage() {
     }
   };
 
+  const handleToggleExclusionRule = async (id: string, isActive: boolean) => {
+    setExclusionRuleStatus(isActive ? '啟用寄件者排除規則中...' : '停用寄件者排除規則中...');
+    try {
+      const rule = await updateMessageExclusionRule(id, isActive);
+      setExclusionRules((current) => current.map((item) => (item.id === rule.id ? rule : item)));
+      setExclusionRuleStatus(isActive ? '已重新啟用寄件者排除規則。' : '已停用寄件者排除規則；不會自動恢復歷史郵件。');
+    } catch (error) {
+      setExclusionRuleStatus(error instanceof Error ? error.message : '更新寄件者排除規則失敗');
+    }
+  };
+
   return (
     <div className="page-stack">
       <header className="page-header">
@@ -233,6 +253,22 @@ export function SettingsPage() {
           </div>
         </article>
         <article className="page-card knowledge-card">
+          <h2>寄件者排除規則</h2>
+          <p>{exclusionRuleStatus}</p>
+          <p>停用規則只會停止未來自動略過，不會大量恢復歷史郵件。</p>
+          <div className="rag-example-list">
+            {exclusionRules.length > 0 ? exclusionRules.map((rule) => (
+              <article key={rule.id} className={rule.isActive ? '' : 'rag-example--inactive'}>
+                <strong>{displayText(rule.matchValue, '未知寄件者')}</strong>
+                <span>{rule.platform}・{rule.matchType}・{rule.isActive ? '啟用' : '停用'}</span>
+                <small>原因：{displayText(rule.reason, '未記錄原因')}</small>
+                <small>來源訊息：{rule.sourceMessageId ?? '未記錄'}・更新 {new Date(rule.updatedAt).toLocaleString('zh-TW')}</small>
+                <button type="button" onClick={() => void handleToggleExclusionRule(rule.id, !rule.isActive)}>{rule.isActive ? '停用規則' : '重新啟用'}</button>
+              </article>
+            )) : <p>目前沒有寄件者排除規則。</p>}
+          </div>
+        </article>
+        <article className="page-card knowledge-card">
           <h2>相似案例知識庫</h2>
           <p>RAG 使用啟用中的歷史案例做相似度比對，可新增或停用案例來調整建議來源。</p>
           <p>{ragStatus}</p>
@@ -271,11 +307,11 @@ export function SettingsPage() {
           <div className="rag-example-list">
             {ragExamples.map((item) => (
               <article key={item.id} className={item.isActive ? '' : 'rag-example--inactive'}>
-                <strong>{item.title}</strong>
-                <span>{item.projectItem}・{item.caseType ?? '未分類'}・{item.quoteAmount ? `NT$ ${item.quoteAmount.toLocaleString('zh-TW')}` : '未定價'}・{item.outcome}・{item.isActive ? '啟用' : '停用'}</span>
+                <strong>{displayText(item.title, '未命名案例')}</strong>
+                <span>{displayText(item.projectItem, '未命名專案')}・{displayText(item.caseType, '未分類')}・{item.quoteAmount ? `NT$ ${item.quoteAmount.toLocaleString('zh-TW')}` : '未定價'}・{displayText(item.outcome, '')}・{item.isActive ? '啟用' : '停用'}</span>
                 {item.projectAliases.length > 0 ? <small>別名：{item.projectAliases.join('、')}</small> : null}
                 {item.typicalMissingFields.length > 0 ? <small>常見缺漏：{item.typicalMissingFields.join('、')}</small> : null}
-                <p>{item.summary}</p>
+                <p>{displayText(item.summary, '尚無摘要')}</p>
                 {item.isActive ? <button type="button" onClick={() => void handleDeactivateRagExample(item.id)}>停用</button> : null}
               </article>
             ))}

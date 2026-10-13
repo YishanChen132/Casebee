@@ -1,3 +1,5 @@
+import {normalizeEmailBody} from './emailBodyNormalizer.js';
+
 export interface PreprocessedEmail {
   subject: string;
   bodyText: string;
@@ -8,7 +10,7 @@ export interface PreprocessedEmail {
 }
 
 function normalizeText(text: string) {
-  return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  return normalizeEmailBody({plainText: text}).text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 }
 
 function splitSubject(text: string) {

@@ -1,5 +1,52 @@
 # Development Log
 
+## 2026-10-12 - P4-B Exclusion Management and Recovery
+
+### Completed
+- Split single-message exclusion from explicit sender exclusion.
+- Added active/excluded/all message visibility and restore support.
+- Added `exclusion_source` to messages and cases via forward-only migration `002_p4b_exclusion_source.sql`.
+- Hardened restore so only `system_auto_case` hidden cases are restored with message recovery; manually hidden cases remain hidden.
+- Added sender exclusion rule listing and safe enable/disable without deleting historical rules.
+- Added Gmail auto-skipped metadata persistence via `gmail_skipped_messages` in `003_p4b_gmail_skipped_messages.sql`.
+- Added skipped Gmail query and controlled re-import flow with one-time user override and duplicate Gmail message protection.
+- Added Messages UI sections for excluded messages and Gmail auto-skipped records, plus Settings UI for sender rules.
+- Documented API contract and migration behavior in `docs/14-p4b-exclusion-management.md`.
+
+### Verification
+- `npm run db:migrate`: passed.
+- `npm run type-check`: passed.
+- `npm run smoke`: passed.
+
+### Decisions
+- Kept single-tenant architecture; recorded Gmail connection scope for future expansion but did not introduce workspaces/users.
+- Did not change classification rules, extraction, RAG, Hybrid Search, or P0-P5 merge behavior.
+- Did not delete or batch-modify historical sender rules.
+
+## 2026-10-12 - P6-A Gmail Content Normalization and Summary Integrity
+
+### Completed
+- Added a shared Gmail/email body normalizer that converts HTML bodies to readable text, decodes HTML entities, removes unsafe/skipped tags, preserves useful line breaks/list/table structure, and trims quoted replies/signatures for readable content.
+- Routed Gmail import, email preprocessing, and extraction summary construction through the shared normalizer so new imported `messages.text`, extraction summaries, and case summaries do not persist raw HTML tags.
+- Added frontend display guards on Kanban and Messages as final presentation protection only; backend normalization remains the source fix.
+- Added a dry-run-only P6-A repair preview for `#CB-909255` and `#CB-907527`; it writes a JSON report and does not modify the database.
+- Marked historical summaries that contain truncated or malformed HTML fragments as `needsHumanReview` in the dry-run report because their original persisted summary text is already incomplete.
+
+### Verification
+- `npm run repair:p6a-html-content:dry-run --workspace @casebee/api`: generated `apps/api/p6a-html-content-repair-dry-run-1791803929481.json`, `appliesChanges: false`, `rows: 3`.
+- `npm run smoke`: passed.
+- `npm run type-check`: passed.
+- `npm run build`: passed.
+- `git diff --check`: passed.
+- `npm run accuracy --workspace @casebee/api`: passed; development, holdout, and thread context remain stable.
+- `npm run classification:p4 --workspace @casebee/api`: passed, 14/14, bucket accuracy `1.000`.
+- `npm run comparison:p5 --workspace @casebee/api`: passed; P5 weak-field averages remain `1.000` and `modelCallsAdded: 0`.
+
+### Decisions
+- No formal DB repair was applied for historical `messages.text`, `cases.summary`, or `ai_extractions.summary`; only dry-run output was generated pending user confirmation.
+- Existing repaired `cases.title` and `customer_name` values were preserved.
+- Hybrid Search, RAG fact guardrails, P0-P5 field merge/classification/extraction rules, and model-call count were not changed.
+
 ## 2026-10-12 - RAG Reply and Rule Context Integration
 
 ### Completed

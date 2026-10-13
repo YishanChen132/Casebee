@@ -14,7 +14,9 @@
     "accuracy": "tsx src/scripts/extractionAccuracy.ts",
     "classification:p4": "tsx src/scripts/classificationP4.ts",
     "comparison:p5": "tsx src/scripts/p5WeakFieldComparison.ts",
-    "repair:html-polluted-cases": "tsx src/scripts/repairHtmlPollutedCases.ts"
+    "reliability:p6b": "tsx src/scripts/p6bGmailReliability.ts",
+    "repair:html-polluted-cases": "tsx src/scripts/repairHtmlPollutedCases.ts",
+    "repair:p6a-html-content:dry-run": "tsx src/scripts/p6aHtmlContentRepairDryRun.ts"
   },
   "dependencies": {
     "@casebee/shared": "0.1.0",

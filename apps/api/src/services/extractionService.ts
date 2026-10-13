@@ -3,6 +3,7 @@ import type {AiExtraction, CaseStatus, RagExample} from '@casebee/shared';
 import {inferCustomerName} from './customerNameInference.js';
 import type {MessageClassification} from './messageClassifier.js';
 import type {PreprocessedEmail} from './emailPreprocessor.js';
+import {normalizeEmailBody} from './emailBodyNormalizer.js';
 
 const projectKeywords = [
   'Instagram Reels',
@@ -351,7 +352,8 @@ function formatMissingFields(missingFields: string[]) {
 }
 
 function buildSummary(input: {senderName: string; text: string; projectItem: string | null; quoteAmount: number | null; expectedDeadline: string | null; intent: string; missingFields: string[]; similarCases?: RagExample[]}) {
-  const body = compactText(stripMailSubject(input.text));
+  const readable = normalizeEmailBody({plainText: stripMailSubject(input.text)}).readableContent;
+  const body = readable.split('\n').map((line) => line.trim()).filter(Boolean).slice(0, 4).join('\n');
   const parts = [`${input.senderName} 的訊息判斷為「${input.intent}」`];
   const bestExample = input.similarCases?.[0];
 
@@ -376,10 +378,10 @@ function buildSummary(input: {senderName: string; text: string; projectItem: str
   }
 
   if (!input.projectItem && !input.quoteAmount && !input.expectedDeadline && body) {
-    parts.push(`主要內容：${body.slice(0, 80)}${body.length > 80 ? '...' : ''}`);
+    parts.push(`主要內容：\n${body.slice(0, 240)}${body.length > 240 ? '...' : ''}`);
   }
 
-  return `${parts.join('；')}。`;
+  return `${parts.join('；\n')}。`;
 }
 
 function buildSuggestedReply(input: {clientName: string; text: string; intent: string; projectItem: string | null; quoteAmount: number | null; expectedDeadline: string | null; missingFields: string[]; similarCases?: RagExample[]}) {

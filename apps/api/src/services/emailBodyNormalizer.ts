@@ -1,4 +1,4 @@
-const blockTags = new Set(['address', 'article', 'aside', 'blockquote', 'div', 'footer', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'header', 'hr', 'li', 'main', 'ol', 'p', 'pre', 'section', 'table', 'tbody', 'td', 'tfoot', 'th', 'thead', 'tr', 'ul']);
+const blockTags = new Set(['address', 'article', 'aside', 'blockquote', 'div', 'footer', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'header', 'hr', 'main', 'ol', 'p', 'pre', 'section', 'table', 'tbody', 'tfoot', 'thead', 'tr', 'ul']);
 const skipTags = new Set(['script', 'style', 'head', 'title', 'meta', 'link']);
 
 const namedEntities: Record<string, string> = {
@@ -30,7 +30,7 @@ function appendBreak(parts: string[]) {
   if (last !== '\n') parts.push('\n');
 }
 
-function normalizePlainText(text: string) {
+export function normalizePlainText(text: string) {
   return decodeHtmlEntities(text)
     .replace(/\r\n/g, '\n')
     .replace(/\r/g, '\n')
@@ -38,6 +38,33 @@ function normalizePlainText(text: string) {
     .replace(/ *\n */g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+
+function looksLikeHtml(text: string) {
+  return /<\s*\/?\s*(?:html|body|br|p|div|span|font|pre|table|tr|td|th|ul|ol|li|b|strong|script|style)\b/i.test(text);
+}
+
+function splitQuotedAndSignature(text: string) {
+  const quoteMarkers = [/^On .+ wrote:$/im, /^寄件者:/im, /^From:/im, /^-----Original Message-----/im, /^>\s?/m];
+  const signatureMarkers = [/\n--\s*\n/m, /\n(?:敬上|Best regards,?|Regards,?|Sent from my iPhone)\b/im];
+  const quoteIndexes = quoteMarkers.map((pattern) => text.search(pattern)).filter((index) => index >= 0);
+  const signatureIndexes = signatureMarkers.map((pattern) => text.search(pattern)).filter((index) => index >= 0);
+  const quoteIndex = quoteIndexes.length > 0 ? Math.min(...quoteIndexes) : -1;
+  const signatureIndex = signatureIndexes.length > 0 ? Math.min(...signatureIndexes) : -1;
+  const cutoffCandidates = [quoteIndex, signatureIndex].filter((index) => index >= 0);
+  const cutoff = cutoffCandidates.length > 0 ? Math.min(...cutoffCandidates) : -1;
+  return {
+    visibleText: cutoff >= 0 ? text.slice(0, cutoff).trim() : text,
+    quotedText: quoteIndex >= 0 ? text.slice(quoteIndex).trim() : '',
+    signatureText: signatureIndex >= 0 && (quoteIndex < 0 || signatureIndex < quoteIndex) ? text.slice(signatureIndex).trim() : '',
+    quoteRemoved: quoteIndex >= 0,
+    signatureDetected: signatureIndex >= 0,
+  };
+}
+
+function normalizeReadableText(text: string) {
+  const normalized = normalizePlainText(text);
+  return splitQuotedAndSignature(normalized);
 }
 
 export function htmlToText(html: string) {
@@ -55,7 +82,6 @@ export function htmlToText(html: string) {
     if (!skipping && tagStart > index) parts.push(html.slice(index, tagStart));
     const tagEnd = html.indexOf('>', tagStart + 1);
     if (tagEnd === -1) {
-      if (!skipping) parts.push(html.slice(tagStart));
       break;
     }
 
@@ -74,6 +100,9 @@ export function htmlToText(html: string) {
     else if (tagName === 'li') {
       appendBreak(parts);
       parts.push('- ');
+    } else if (tagName === 'td' || tagName === 'th') {
+      const last = parts[parts.length - 1] ?? '';
+      if (last && last !== '\n' && last !== ' | ') parts.push(' | ');
     } else if (blockTags.has(tagName)) {
       appendBreak(parts);
     }
@@ -85,13 +114,17 @@ export function htmlToText(html: string) {
 }
 
 export function normalizeEmailBody(input: {plainText?: string | null; htmlText?: string | null}) {
-  const plainText = normalizePlainText(input.plainText ?? '');
+  const rawPlainText = input.plainText ?? '';
+  const plainText = looksLikeHtml(rawPlainText) ? htmlToText(rawPlainText) : normalizePlainText(rawPlainText);
   if (plainText) {
-    return {text: plainText, source: 'text/plain' as const, original: input.plainText ?? '', wasHtml: false};
+    const readable = normalizeReadableText(plainText);
+    return {text: readable.visibleText || plainText, readableContent: readable.visibleText || plainText, source: 'text/plain' as const, original: rawPlainText, wasHtml: looksLikeHtml(rawPlainText), ...readable};
   }
 
   const htmlText = input.htmlText ?? '';
-  return {text: htmlToText(htmlText), source: 'text/html' as const, original: htmlText, wasHtml: Boolean(htmlText)};
+  const normalized = htmlToText(htmlText);
+  const readable = normalizeReadableText(normalized);
+  return {text: readable.visibleText || normalized, readableContent: readable.visibleText || normalized, source: 'text/html' as const, original: htmlText, wasHtml: Boolean(htmlText), ...readable};
 }
 
 export function sanitizeDisplayText(value: string | null | undefined) {

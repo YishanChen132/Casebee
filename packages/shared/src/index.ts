@@ -134,6 +134,7 @@ export function normalizeMissingFields(fields: string[]): string[] {
 export type ReplyStatus = 'pending_reply' | 'replied' | 'no_reply_needed';
 export type ReplyStatusSource = 'system' | 'user';
 export type NextActionSource = 'extracted' | 'inferred' | 'user_confirmed';
+export type ExclusionSource = 'manual_message' | 'manual_case' | 'sender_rule' | 'system_auto_case' | 'legacy';
 
 export interface Customer {
   id: string;
@@ -181,6 +182,9 @@ export interface CaseRecord {
   missingFields: string[];
   createdAt: string;
   updatedAt: string;
+  excludedAt?: string | null;
+  excludedReason?: string | null;
+  exclusionSource?: ExclusionSource | null;
 }
 
 export interface CaseDetail {
@@ -207,6 +211,29 @@ export interface MessageEvent {
   replyStatus: ReplyStatus;
   replyStatusUpdatedAt: string;
   replyStatusSource: ReplyStatusSource;
+  excludedAt?: string | null;
+  excludedReason?: string | null;
+  exclusionSource?: ExclusionSource | null;
+}
+
+export interface GmailSkippedMessage {
+  id: string;
+  gmailMessageId: string;
+  gmailThreadId: string | null;
+  connectionScope: string | null;
+  sender: string;
+  subject: string;
+  snippet: string;
+  category: string;
+  reason: string;
+  source: string;
+  skippedAt: string;
+  lastRetryAt: string | null;
+  restoredAt: string | null;
+  restoredMessageId: string | null;
+  lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface MessageReplyStatusHistoryItem {

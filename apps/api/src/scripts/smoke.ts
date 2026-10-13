@@ -3,8 +3,9 @@ import {createAlert, resolveAlert} from '../repositories/alertsRepository.js';
 import {findReviewHistoryByMessageId, findReviewItemsByMessageId, resolveReviewItem} from '../repositories/aiReviewRepository.js';
 import {findAllCases, findCaseDetailById, updateCaseFields} from '../repositories/casesRepository.js';
 import {findCustomerDetailById, findCustomerSummaries} from '../repositories/customersRepository.js';
-import {findSenderEmailExclusionRule} from '../repositories/messageExclusionRulesRepository.js';
-import {createMessage, excludeMessage, findAllMessages, findReplyStatusHistoryByMessageId, setReplyStatus} from '../repositories/messagesRepository.js';
+import {findGmailSkippedMessages, markGmailSkippedMessageError, markGmailSkippedMessageRestored, upsertGmailSkippedMessage} from '../repositories/gmailSkippedMessagesRepository.js';
+import {findSenderEmailExclusionRule, setMessageExclusionRuleActive} from '../repositories/messageExclusionRulesRepository.js';
+import {createMessage, excludeMessage, excludeSenderForMessage, findAllMessages, findReplyStatusHistoryByMessageId, restoreMessage, setReplyStatus} from '../repositories/messagesRepository.js';
 import {createRagExample, deactivateRagExample, findAllRagExamples} from '../repositories/ragExamplesRepository.js';
 import {pool} from '../db/pool.js';
 import {enrichBusinessRisk} from '../services/businessRiskService.js';
@@ -12,7 +13,7 @@ import {mapCaseStatusToStage, normalizeMissingFields, stageRequiredFields} from 
 import {analyzeMessage} from '../services/aiService.js';
 import {inferCustomerName} from '../services/customerNameInference.js';
 import {extractMessage} from '../services/extractionService.js';
-import {extractGmailBodyText, getGmailStatus} from '../services/gmailService.js';
+import {classifySkippedGmailRecovery, extractGmailBodyText, getGmailStatus} from '../services/gmailService.js';
 import {importMessage} from '../services/messageImportService.js';
 import {reanalyzeMessage} from '../services/messageReanalysisService.js';
 import {getRuleScheduleStatus, runReplyOverdueRules, runRules} from '../services/ruleEngine.js';
@@ -54,12 +55,31 @@ async function main() {
   const entityBody = extractGmailBodyText({mimeType: 'text/html', body: {data: Buffer.from('<p>報價 &amp; 授權範圍&nbsp;確認</p>').toString('base64url')}});
   assert(entityBody.text === '報價 & 授權範圍 確認', 'Expected HTML entities to decode safely.');
 
+  const nestedList = extractGmailBodyText({mimeType: 'text/html', body: {data: Buffer.from('<p>合作需求</p><ul><li>交付項目<ul><li>Reels 1 支</li><li>限動 3 則</li></ul></li><li>10/05 前交稿</li></ul>').toString('base64url')}});
+  assert(nestedList.text.includes('- 交付項目') && nestedList.text.includes('- Reels 1 支') && nestedList.text.includes('- 限動 3 則'), 'Expected nested lists to stay readable.');
+
+  const tableBody = extractGmailBodyText({mimeType: 'text/html', body: {data: Buffer.from('<table><tr><th>項目</th><th>內容</th></tr><tr><td>報價</td><td>NT$ 35,000</td></tr><tr><td>交期</td><td>10/05</td></tr></table>').toString('base64url')}});
+  assert(tableBody.text.includes('項目') && tableBody.text.includes('內容') && tableBody.text.includes('報價') && tableBody.text.includes('NT$ 35,000'), 'Expected table text to preserve reading order.');
+
+  const quotedAndSigned = extractGmailBodyText({mimeType: 'text/plain', body: {data: Buffer.from('您好，請提供包裝設計報價。\n-- \n品牌簽名檔\nOn Mon, Amy wrote:\n舊信內容').toString('base64url')}});
+  assert(quotedAndSigned.text === '您好，請提供包裝設計報價。' && quotedAndSigned.quoteRemoved && quotedAndSigned.signatureDetected, 'Expected quotes and signatures to be detected and excluded from readable text.');
+
+  const malformed = extractGmailBodyText({mimeType: 'text/html', body: {data: Buffer.from('<div><b>需要產品攝影報價<br><script>alert(1)</script><p>預算 28000').toString('base64url')}});
+  assert(malformed.text.includes('需要產品攝影報價') && malformed.text.includes('預算 28000') && !malformed.text.includes('alert'), 'Expected malformed/unsafe HTML to normalize without script content.');
+
+  const plainGmail = extractGmailBodyText({mimeType: 'text/plain', body: {data: Buffer.from('想詢問 Logo 設計報價，預算 12000。').toString('base64url')}});
+  assert(plainGmail.source === 'text/plain' && plainGmail.text === '想詢問 Logo 設計報價，預算 12000。', 'Expected normal plain text Gmail to stay unchanged.');
+
   const htmlCustomer = inferCustomerName({from: '國立清華大學教務處招生策略中心 <adms@my.nthu.edu.tw>', senderName: '國立清華大學教務處招生策略中心', senderEmail: 'adms@my.nthu.edu.tw', subject: '推薦完成通知函', text: '<pre><b>國立清華大學 招生策略中心 敬上<b><br></pre>'});
   assert(htmlCustomer.includes('國立清華大學') && !htmlCustomer.includes('<') && !/\bbr\b/i.test(htmlCustomer), `Expected HTML-only candidate to become a safe organization name, got ${htmlCustomer}.`);
+
+  const htmlExtraction = extractMessage({senderName: '沐白茶室', text: `Subject: 包裝設計詢價\n\n${htmlOnly.text}`});
+  assert(htmlExtraction.summary.includes('包裝設計') && !htmlExtraction.summary.includes('<br>') && !htmlExtraction.summary.includes('<b>'), 'Expected extraction summary to use normalized readable content without HTML tags.');
 
   const messages = await findAllMessages();
   assert(messages.length > 0, 'Expected at least one message. Run npm run db:seed first.');
   await pool.query('DELETE FROM messages WHERE sender_id = $1', ['smoke-exclude@example.com']);
+  await pool.query('DELETE FROM message_exclusion_rules WHERE match_value = $1', ['smoke-exclude@example.com']);
   const smokeMessage = await createMessage({
     platform: 'Gmail',
     senderId: 'smoke-exclude@example.com',
@@ -69,12 +89,106 @@ async function main() {
   });
   const excludedMessage = await excludeMessage(smokeMessage.id, 'Smoke test exclusion');
   assert(excludedMessage?.message.id === smokeMessage.id, 'Expected message exclusion to return the excluded message.');
-  const learnedExclusionRule = await findSenderEmailExclusionRule('Gmail', 'smoke-exclude@example.com');
-  assert(learnedExclusionRule?.reason === 'Smoke test exclusion', 'Expected Gmail exclusion to learn sender rule.');
+  assert(excludedMessage.message.exclusionSource === 'manual_message', 'Expected single-message exclusion source.');
+  const noLearnedRule = await findSenderEmailExclusionRule('Gmail', 'smoke-exclude@example.com');
+  assert(!noLearnedRule, 'Expected single-message exclusion not to learn sender rule.');
   const visibleMessagesAfterExclusion = await findAllMessages();
   assert(!visibleMessagesAfterExclusion.some((message) => message.id === smokeMessage.id), 'Expected excluded message to be hidden from message list.');
+  const excludedMessages = await findAllMessages('excluded');
+  assert(excludedMessages.some((message) => message.id === smokeMessage.id), 'Expected excluded message list to include single-message exclusion.');
+  const restoredSingleMessage = await restoreMessage(smokeMessage.id);
+  assert(restoredSingleMessage?.message.id === smokeMessage.id && !restoredSingleMessage.message.excludedAt, 'Expected single-message restore to clear exclusion state.');
+  const senderExcludedMessage = await excludeSenderForMessage(smokeMessage.id, 'Smoke sender exclusion');
+  assert(senderExcludedMessage?.message.exclusionSource === 'sender_rule', 'Expected explicit sender exclusion source.');
+  const learnedExclusionRule = await findSenderEmailExclusionRule('Gmail', 'smoke-exclude@example.com');
+  assert(learnedExclusionRule?.reason === 'Smoke sender exclusion', 'Expected explicit sender exclusion to learn sender rule.');
+  const disabledRule = await setMessageExclusionRuleActive(learnedExclusionRule.id, false);
+  assert(disabledRule?.isActive === false, 'Expected sender exclusion rule to be disabled safely.');
+  const inactiveRuleLookup = await findSenderEmailExclusionRule('Gmail', 'smoke-exclude@example.com');
+  assert(!inactiveRuleLookup, 'Expected disabled sender exclusion rule not to match future Gmail triage.');
+  const reenabledRule = await setMessageExclusionRuleActive(learnedExclusionRule.id, true);
+  assert(reenabledRule?.isActive === true, 'Expected sender exclusion rule to be re-enabled.');
+  await pool.query("DELETE FROM gmail_skipped_messages WHERE gmail_message_id LIKE 'smoke-skipped-%'");
+  const skippedGmail = await upsertGmailSkippedMessage({
+    gmailMessageId: 'smoke-skipped-001',
+    gmailThreadId: 'smoke-skipped-thread',
+    connectionScope: 'smoke@example.com',
+    sender: 'newsletter@example.com',
+    subject: 'Smoke newsletter',
+    snippet: 'This is a marketing newsletter snippet.',
+    category: 'newsletter',
+    reason: '電子報或行銷郵件，不建立案件',
+    source: 'gmail_triage',
+  });
+  assert(skippedGmail.subject === 'Smoke newsletter' && skippedGmail.restoredMessageId === null, 'Expected skipped Gmail metadata to be persisted without restore state.');
+  const updatedSkippedGmail = await upsertGmailSkippedMessage({...skippedGmail, gmailMessageId: 'smoke-skipped-001', reason: 'Updated smoke reason', category: 'announcement', source: 'gmail_triage'});
+  assert(updatedSkippedGmail.reason === 'Updated smoke reason' && updatedSkippedGmail.category === 'announcement', 'Expected duplicate skipped Gmail upsert to update metadata instead of duplicating.');
+  const pendingSkipped = await findGmailSkippedMessages('pending');
+  assert(pendingSkipped.some((item) => item.gmailMessageId === 'smoke-skipped-001'), 'Expected pending skipped Gmail list to include unresolved skipped message.');
+  const skippedWithError = await markGmailSkippedMessageError(skippedGmail.id, 'Smoke Gmail API failure');
+  assert(skippedWithError?.lastError === 'Smoke Gmail API failure' && skippedWithError.lastRetryAt, 'Expected skipped Gmail retry failure to be recorded.');
+  const skippedRestored = await markGmailSkippedMessageRestored(skippedGmail.id, smokeMessage.id);
+  assert(skippedRestored?.restoredMessageId === smokeMessage.id && skippedRestored.restoredAt, 'Expected skipped Gmail restore state to be recorded.');
+  const restoredSkipped = await findGmailSkippedMessages('restored');
+  assert(restoredSkipped.some((item) => item.gmailMessageId === 'smoke-skipped-001'), 'Expected restored skipped Gmail list to include restored record.');
+  const nonCaseRecovery = classifySkippedGmailRecovery('Subject: 驗證碼通知\n\nYour verification code is 123456.', false);
+  assert(nonCaseRecovery.classificationBucket === 'NON_CASE' && !nonCaseRecovery.shouldImportAsCase && !nonCaseRecovery.shouldCreateReviewMessage, 'Expected NON_CASE skipped Gmail recovery not to create a business case.');
+  const uncertainRecovery = classifySkippedGmailRecovery('Subject: hello\n\n收到，謝謝。', false);
+  assert(uncertainRecovery.classificationBucket === 'UNCERTAIN' && !uncertainRecovery.shouldImportAsCase && uncertainRecovery.shouldCreateReviewMessage, 'Expected UNCERTAIN skipped Gmail recovery to create a review-only message.');
+  const threadRecovery = classifySkippedGmailRecovery('Subject: hello\n\n收到，謝謝。', true);
+  assert(threadRecovery.shouldImportAsCase, 'Expected existing Gmail thread case to keep follow-up messages in the case pipeline.');
+  await pool.query("DELETE FROM gmail_skipped_messages WHERE gmail_message_id LIKE 'smoke-skipped-%'");
   await pool.query('DELETE FROM messages WHERE id = $1', [smokeMessage.id]);
   await pool.query('DELETE FROM message_exclusion_rules WHERE match_value = $1', ['smoke-exclude@example.com']);
+
+  await pool.query('DELETE FROM ai_extractions WHERE message_id IN (SELECT id FROM messages WHERE sender_id = $1)', ['smoke-restore@example.com']);
+  const staleRestoreCases = await pool.query('SELECT DISTINCT case_id FROM messages WHERE sender_id = $1 AND case_id IS NOT NULL', ['smoke-restore@example.com']);
+  const staleRestoreCaseIds = staleRestoreCases.rows.map((row) => String(row.case_id));
+  if (staleRestoreCaseIds.length > 0) await pool.query('DELETE FROM alerts WHERE case_id = ANY($1::text[])', [staleRestoreCaseIds]);
+  await pool.query('DELETE FROM messages WHERE sender_id = $1', ['smoke-restore@example.com']);
+  if (staleRestoreCaseIds.length > 0) await pool.query('DELETE FROM cases WHERE id = ANY($1::text[])', [staleRestoreCaseIds]);
+  await pool.query("DELETE FROM customers WHERE contact_handle = 'smoke-restore@example.com' AND NOT EXISTS (SELECT 1 FROM cases WHERE cases.customer_id = customers.id)");
+  const restoreImport = await importMessage({
+    platform: 'Gmail',
+    senderId: 'smoke-restore@example.com',
+    senderName: 'Smoke Restore Client',
+    text: '想詢問品牌識別設計報價，預算 50000，月底前完成。',
+    rawPayload: {smokeRestore: true},
+  });
+  const secondRestoreMessage = await createMessage({
+    platform: 'Gmail',
+    senderId: 'smoke-restore@example.com',
+    senderName: 'Smoke Restore Client',
+    text: '補充：品牌識別需要包含 Logo 與名片。',
+    threadId: restoreImport.message.threadId,
+    caseId: restoreImport.case.id,
+    rawPayload: {smokeRestore: 'second-message'},
+  });
+  const firstExcluded = await excludeMessage(restoreImport.message.id, 'Smoke restore exclusion first');
+  assert(firstExcluded?.excludedCaseId === null, 'Expected case to remain visible while another active message exists.');
+  const stillVisibleCase = await pool.query('SELECT excluded_at FROM cases WHERE id = $1', [restoreImport.case.id]);
+  assert(!stillVisibleCase.rows[0]?.excluded_at, 'Expected partial message exclusion not to hide case.');
+  const autoHidden = await excludeMessage(secondRestoreMessage.id, 'Smoke restore exclusion second');
+  assert(autoHidden?.excludedCaseId === restoreImport.case.id, 'Expected case with no active messages to be auto-hidden.');
+  const hiddenCase = await pool.query('SELECT excluded_at, exclusion_source FROM cases WHERE id = $1', [restoreImport.case.id]);
+  assert(hiddenCase.rows[0]?.excluded_at && hiddenCase.rows[0]?.exclusion_source === 'system_auto_case', 'Expected auto-hidden case exclusion source.');
+  const restored = await restoreMessage(restoreImport.message.id);
+  assert(restored?.restoredCaseId === restoreImport.case.id, 'Expected restore to unhide system-auto-hidden case.');
+  const restoredAgain = await restoreMessage(restoreImport.message.id);
+  assert(restoredAgain?.message.id === restoreImport.message.id && restoredAgain.restoredCaseId === null, 'Expected repeated restore to be idempotent.');
+  await pool.query("UPDATE cases SET excluded_at = now(), excluded_reason = 'Manual smoke case exclusion', exclusion_source = 'manual_case' WHERE id = $1", [restoreImport.case.id]);
+  await excludeMessage(restoreImport.message.id, 'Smoke exclusion after manual case hide');
+  const manualHiddenCase = await pool.query('SELECT exclusion_source FROM cases WHERE id = $1', [restoreImport.case.id]);
+  assert(manualHiddenCase.rows[0]?.exclusion_source === 'manual_case', 'Expected message exclusion not to overwrite manual case exclusion source.');
+  const restoredManualCaseMessage = await restoreMessage(restoreImport.message.id);
+  assert(restoredManualCaseMessage?.restoredCaseId === null, 'Expected message restore not to unhide manually excluded case.');
+  const stillManualHiddenCase = await pool.query('SELECT excluded_at, exclusion_source FROM cases WHERE id = $1', [restoreImport.case.id]);
+  assert(stillManualHiddenCase.rows[0]?.excluded_at && stillManualHiddenCase.rows[0]?.exclusion_source === 'manual_case', 'Expected manually excluded case to remain hidden after message restore.');
+  await pool.query('DELETE FROM alerts WHERE case_id = $1', [restoreImport.case.id]);
+  await pool.query('DELETE FROM ai_extractions WHERE message_id = $1', [restoreImport.message.id]);
+  await pool.query('DELETE FROM messages WHERE id = ANY($1::text[])', [[restoreImport.message.id, secondRestoreMessage.id]]);
+  await pool.query('DELETE FROM cases WHERE id = $1', [restoreImport.case.id]);
+  await pool.query("DELETE FROM customers WHERE contact_handle = 'smoke-restore@example.com' AND NOT EXISTS (SELECT 1 FROM cases WHERE cases.customer_id = customers.id)");
 
   await pool.query('DELETE FROM ai_extractions WHERE message_id IN (SELECT id FROM messages WHERE sender_id = $1)', ['smoke-reply@example.com']);
   const staleReplyCases = await pool.query('SELECT DISTINCT case_id FROM messages WHERE sender_id = $1 AND case_id IS NOT NULL', ['smoke-reply@example.com']);

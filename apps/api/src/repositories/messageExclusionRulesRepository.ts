@@ -9,6 +9,9 @@ export interface MessageExclusionRule {
   matchValue: string;
   reason: string;
   sourceMessageId: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 function normalizeSenderEmail(value: string) {
@@ -23,7 +26,15 @@ function mapRule(row: Record<string, unknown>): MessageExclusionRule {
     matchValue: String(row.match_value),
     reason: String(row.reason),
     sourceMessageId: row.source_message_id ? String(row.source_message_id) : null,
+    isActive: row.is_active !== false,
+    createdAt: new Date(String(row.created_at)).toISOString(),
+    updatedAt: new Date(String(row.updated_at)).toISOString(),
   };
+}
+
+export async function findAllMessageExclusionRules() {
+  const result = await pool.query('SELECT * FROM message_exclusion_rules ORDER BY is_active DESC, updated_at DESC, created_at DESC');
+  return result.rows.map(mapRule);
 }
 
 export async function upsertSenderEmailExclusionRule(input: {platform: Platform; senderEmail: string; reason: string; sourceMessageId?: string}) {
@@ -52,5 +63,10 @@ export async function findSenderEmailExclusionRule(platform: Platform, senderEma
     [platform, normalizeSenderEmail(senderEmail)],
   );
 
+  return result.rows[0] ? mapRule(result.rows[0]) : null;
+}
+
+export async function setMessageExclusionRuleActive(id: string, isActive: boolean) {
+  const result = await pool.query('UPDATE message_exclusion_rules SET is_active = $2, updated_at = now() WHERE id = $1 RETURNING *', [id, isActive]);
   return result.rows[0] ? mapRule(result.rows[0]) : null;
 }

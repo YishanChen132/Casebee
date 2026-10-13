@@ -6,12 +6,14 @@ import {checkDatabase} from './db/pool.js';
 import {resolveAlert} from './repositories/alertsRepository.js';
 import {findAllCases, findCaseById, findCaseDetailById, updateCaseFields} from './repositories/casesRepository.js';
 import {findCustomerDetailById, findCustomerSummaries} from './repositories/customersRepository.js';
-import {excludeMessage, findAllMessages, findReplyStatusHistoryByMessageId, setReplyStatus} from './repositories/messagesRepository.js';
+import {findGmailSkippedMessages} from './repositories/gmailSkippedMessagesRepository.js';
+import {excludeMessage, excludeSenderForMessage, findAllMessages, findReplyStatusHistoryByMessageId, restoreMessage, setReplyStatus} from './repositories/messagesRepository.js';
+import {findAllMessageExclusionRules, setMessageExclusionRuleActive} from './repositories/messageExclusionRulesRepository.js';
 import {createRagExample, deactivateRagExample, findAllRagExamples} from './repositories/ragExamplesRepository.js';
 import {findReviewHistoryByMessageId, findReviewItemsByMessageId, resolveReviewItem} from './repositories/aiReviewRepository.js';
 import {enrichBusinessRisk, getBusinessRiskSummary} from './services/businessRiskService.js';
 import {importDemoMessages} from './services/demoImportService.js';
-import {createGmailAuthUrl, getGmailStatus, handleGmailCallback, pollGmailMessages} from './services/gmailService.js';
+import {createGmailAuthUrl, getGmailStatus, handleGmailCallback, importSkippedGmailMessage, pollGmailMessages} from './services/gmailService.js';
 import {startGmailPollingScheduler} from './services/gmailPollingScheduler.js';
 import {importMessage} from './services/messageImportService.js';
 import {reanalyzeMessage} from './services/messageReanalysisService.js';
@@ -162,9 +164,10 @@ app.patch('/api/alerts/:id/resolve', async (request, response) => {
   }
 });
 
-app.get('/api/messages', async (_request, response) => {
+app.get('/api/messages', async (request, response) => {
   try {
-    response.json({data: await findAllMessages()});
+    const visibility = request.query.visibility === 'excluded' || request.query.visibility === 'all' ? request.query.visibility : 'active';
+    response.json({data: await findAllMessages(visibility)});
   } catch (error) {
     response.status(500).json({error: {message: error instanceof Error ? error.message : 'Failed to load messages'}});
   }
@@ -184,6 +187,64 @@ app.post('/api/messages/:id/exclude', async (request, response) => {
     response.json({data: result});
   } catch (error) {
     response.status(500).json({error: {message: error instanceof Error ? error.message : 'Failed to exclude message'}});
+  }
+});
+
+app.post('/api/messages/:id/exclude-sender', async (request, response) => {
+  const payload = request.body as {reason?: unknown};
+  const reason = typeof payload.reason === 'string' && payload.reason.trim() ? payload.reason.trim() : '使用者排除寄件者';
+
+  try {
+    const result = await excludeSenderForMessage(request.params.id, reason);
+    if (!result) {
+      response.status(404).json({error: {message: 'Message not found'}});
+      return;
+    }
+
+    response.json({data: result});
+  } catch (error) {
+    response.status(500).json({error: {message: error instanceof Error ? error.message : 'Failed to exclude sender'}});
+  }
+});
+
+app.post('/api/messages/:id/restore', async (request, response) => {
+  try {
+    const result = await restoreMessage(request.params.id);
+    if (!result) {
+      response.status(404).json({error: {message: 'Message not found'}});
+      return;
+    }
+
+    response.json({data: result});
+  } catch (error) {
+    response.status(500).json({error: {message: error instanceof Error ? error.message : 'Failed to restore message'}});
+  }
+});
+
+app.get('/api/message-exclusion-rules', async (_request, response) => {
+  try {
+    response.json({data: await findAllMessageExclusionRules()});
+  } catch (error) {
+    response.status(500).json({error: {message: error instanceof Error ? error.message : 'Failed to load exclusion rules'}});
+  }
+});
+
+app.patch('/api/message-exclusion-rules/:id', async (request, response) => {
+  const payload = request.body as {isActive?: unknown};
+  if (typeof payload.isActive !== 'boolean') {
+    response.status(400).json({error: {message: 'isActive boolean is required'}});
+    return;
+  }
+
+  try {
+    const rule = await setMessageExclusionRuleActive(request.params.id, payload.isActive);
+    if (!rule) {
+      response.status(404).json({error: {message: 'Exclusion rule not found'}});
+      return;
+    }
+    response.json({data: rule});
+  } catch (error) {
+    response.status(500).json({error: {message: error instanceof Error ? error.message : 'Failed to update exclusion rule'}});
   }
 });
 
@@ -411,6 +472,28 @@ app.post('/api/integrations/gmail/poll', async (_request, response) => {
     const message = error instanceof Error ? error.message : 'Failed to poll Gmail';
     const status = message.includes('not connected') || message.includes('not configured') ? 400 : 500;
     response.status(status).json({error: {message}});
+  }
+});
+
+app.get('/api/integrations/gmail/skipped', async (request, response) => {
+  const status = request.query.status === 'restored' || request.query.status === 'all' ? request.query.status : 'pending';
+  try {
+    response.json({data: await findGmailSkippedMessages(status)});
+  } catch (error) {
+    response.status(500).json({error: {message: error instanceof Error ? error.message : 'Failed to load skipped Gmail messages'}});
+  }
+});
+
+app.post('/api/integrations/gmail/skipped/:id/import', async (request, response) => {
+  try {
+    const result = await importSkippedGmailMessage(request.params.id);
+    if (!result) {
+      response.status(404).json({error: {message: 'Skipped Gmail message not found'}});
+      return;
+    }
+    response.json({data: result});
+  } catch (error) {
+    response.status(500).json({error: {message: error instanceof Error ? error.message : 'Failed to import skipped Gmail message'}});
   }
 });
 

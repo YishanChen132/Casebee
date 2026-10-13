@@ -1,4 +1,4 @@
-import type {AiExtraction, AiReviewDetail, AiReviewHistoryItem, AiReviewItem, Alert, BusinessProfile, BusinessRiskScore, BusinessRiskSummary, CaseDetail, CaseRecord, CaseStatus, CreateRagExampleInput, CustomerDetail, CustomerSummary, MessageEvent, MessageReplyStatusHistoryItem, Platform, RagExample, ReplyStatus, RuleScheduleStatus, ThreadAwareExtractionResult} from '@casebee/shared';
+import type {AiExtraction, AiReviewDetail, AiReviewHistoryItem, AiReviewItem, Alert, BusinessProfile, BusinessRiskScore, BusinessRiskSummary, CaseDetail, CaseRecord, CaseStatus, CreateRagExampleInput, CustomerDetail, CustomerSummary, GmailSkippedMessage, MessageEvent, MessageReplyStatusHistoryItem, Platform, RagExample, ReplyStatus, RuleScheduleStatus, ThreadAwareExtractionResult} from '@casebee/shared';
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000';
 
@@ -75,12 +75,40 @@ export function resolveAlert(id: string) {
   return patch<Alert>(`/api/alerts/${id}/resolve`, {});
 }
 
-export function getMessages() {
-  return request<MessageEvent[]>('/api/messages');
+export interface MessageExclusionRule {
+  id: string;
+  platform: Platform;
+  matchType: 'sender_email';
+  matchValue: string;
+  reason: string;
+  sourceMessageId: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function getMessages(visibility: 'active' | 'excluded' | 'all' = 'active') {
+  return request<MessageEvent[]>(`/api/messages?visibility=${visibility}`);
 }
 
 export function excludeMessage(id: string, reason: string) {
   return post<{message: MessageEvent; excludedCaseId: string | null; learnedRule: unknown | null}>(`/api/messages/${id}/exclude`, {reason});
+}
+
+export function excludeSenderForMessage(id: string, reason: string) {
+  return post<{message: MessageEvent; excludedCaseId: string | null; learnedRule: MessageExclusionRule | null}>(`/api/messages/${id}/exclude-sender`, {reason});
+}
+
+export function restoreMessage(id: string) {
+  return post<{message: MessageEvent; restoredCaseId: string | null}>(`/api/messages/${id}/restore`, {});
+}
+
+export function getMessageExclusionRules() {
+  return request<MessageExclusionRule[]>('/api/message-exclusion-rules');
+}
+
+export function updateMessageExclusionRule(id: string, isActive: boolean) {
+  return patch<MessageExclusionRule>(`/api/message-exclusion-rules/${id}`, {isActive});
 }
 
 export function updateMessageReplyStatus(id: string, replyStatus: ReplyStatus) {
@@ -138,6 +166,14 @@ export function pollGmail() {
     skipped: Array<{gmailMessageId: string; messageId?: string; category: string; reason: string}>;
     failed: Array<{gmailMessageId: string; reason: string}>;
   }>('/api/integrations/gmail/poll', {});
+}
+
+export function getSkippedGmailMessages(status: 'pending' | 'restored' | 'all' = 'pending') {
+  return request<GmailSkippedMessage[]>(`/api/integrations/gmail/skipped?status=${status}`);
+}
+
+export function importSkippedGmailMessage(id: string) {
+  return post<{skipped: GmailSkippedMessage; result: ImportPipelineResult | null; existingMessage: MessageEvent | null; alreadyRestored: boolean}>(`/api/integrations/gmail/skipped/${id}/import`, {});
 }
 
 export function importDemoMessages() {

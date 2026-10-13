@@ -35,6 +35,9 @@ export function mapCase(row: Record<string, unknown>): CaseRecord {
     missingFields: normalizeMissingFields(Array.isArray(row.missing_fields) ? row.missing_fields.map(String) : []),
     createdAt: new Date(String(row.created_at)).toISOString(),
     updatedAt: new Date(String(row.updated_at)).toISOString(),
+    excludedAt: row.excluded_at ? new Date(String(row.excluded_at)).toISOString() : null,
+    excludedReason: row.excluded_reason ? String(row.excluded_reason) : null,
+    exclusionSource: row.exclusion_source ? row.exclusion_source as CaseRecord['exclusionSource'] : null,
   };
 }
 
@@ -53,6 +56,9 @@ export function mapMessage(row: Record<string, unknown>): MessageEvent {
     replyStatus: row.reply_status as MessageEvent['replyStatus'],
     replyStatusUpdatedAt: new Date(String(row.reply_status_updated_at)).toISOString(),
     replyStatusSource: row.reply_status_source as MessageEvent['replyStatusSource'],
+    excludedAt: row.excluded_at ? new Date(String(row.excluded_at)).toISOString() : null,
+    excludedReason: row.excluded_reason ? String(row.excluded_reason) : null,
+    exclusionSource: row.exclusion_source ? row.exclusion_source as MessageEvent['exclusionSource'] : null,
   };
 }
 

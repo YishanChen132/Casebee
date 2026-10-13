@@ -7,3 +7,4 @@ npm-debug.log*
 coverage/
 *.tsbuildinfo
 repair-html-polluted-cases-*.json
+p6a-html-content-repair-dry-run-*.json

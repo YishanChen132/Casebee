@@ -2,6 +2,7 @@ import {useEffect, useState} from 'react';
 import type {BusinessRiskSummary, CaseRecord, MessageEvent} from '@casebee/shared';
 import {getBusinessRiskSummary, getCases, getMessages} from '../services/api';
 import type {NavigateToPage} from '../App';
+import {displayText, truncateDisplayText} from '../utils/displayText';
 
 interface DashboardPageProps {
   onNavigate: NavigateToPage;
@@ -101,7 +102,7 @@ export function DashboardPage({onNavigate}: DashboardPageProps) {
             <button type="button" onClick={() => onNavigate('messages')}>前往 Messages</button>
           </div>
           {unhandledMessages.length > 0 ? unhandledMessages.map((message) => (
-            <button type="button" key={message.id} className="dashboard-task-row dashboard-task-row--button" onClick={() => onNavigate('messages', {messageId: message.id})}><strong>{message.senderName}</strong><span>{message.text.slice(0, 64)}...</span></button>
+            <button type="button" key={message.id} className="dashboard-task-row dashboard-task-row--button" onClick={() => onNavigate('messages', {messageId: message.id})}><strong>{displayText(message.senderName, '未命名')}</strong><span>{truncateDisplayText(message.text, 64)}...</span></button>
           )) : <p>目前沒有未連結案件的訊息。</p>}
         </article>
 
@@ -114,7 +115,7 @@ export function DashboardPage({onNavigate}: DashboardPageProps) {
             <button type="button" onClick={() => onNavigate('kanban')}>前往 Kanban</button>
           </div>
           {missingFieldCases.length > 0 ? missingFieldCases.map((item) => (
-            <button type="button" key={item.id} className="dashboard-task-row dashboard-task-row--button" onClick={() => onNavigate('kanban', {caseId: item.id})}><strong>{item.title}</strong><span>{item.missingFields.length} 項缺漏・{item.customerName}</span></button>
+            <button type="button" key={item.id} className="dashboard-task-row dashboard-task-row--button" onClick={() => onNavigate('kanban', {caseId: item.id})}><strong>{displayText(item.title, '未命名案件')}</strong><span>{item.missingFields.length} 項缺漏・{displayText(item.customerName, '未命名')}</span></button>
           )) : <p>目前沒有缺資料案件。</p>}
         </article>
 
@@ -127,7 +128,7 @@ export function DashboardPage({onNavigate}: DashboardPageProps) {
             <button type="button" onClick={() => onNavigate('kanban')}>管理案件</button>
           </div>
           {activeCases.length > 0 ? activeCases.map((item) => (
-            <button type="button" key={item.id} className="dashboard-task-row dashboard-task-row--button" onClick={() => onNavigate('kanban', {caseId: item.id})}><strong>{item.title}</strong><span>{item.status}・{item.expectedDeadline ?? '未填期限'}</span></button>
+            <button type="button" key={item.id} className="dashboard-task-row dashboard-task-row--button" onClick={() => onNavigate('kanban', {caseId: item.id})}><strong>{displayText(item.title, '未命名案件')}</strong><span>{item.status}・{item.expectedDeadline ?? '未填期限'}</span></button>
           )) : <p>目前沒有進行中案件。</p>}
         </article>
 
@@ -140,7 +141,7 @@ export function DashboardPage({onNavigate}: DashboardPageProps) {
             <button type="button" onClick={() => onNavigate('messages', pendingReviewMessages[0] ? {messageId: pendingReviewMessages[0].id} : undefined)}>前往確認</button>
           </div>
           {pendingReviewMessages.length > 0 ? pendingReviewMessages.slice(0, 3).map((message) => (
-            <button type="button" key={message.id} className="dashboard-task-row dashboard-task-row--button" onClick={() => onNavigate('messages', {messageId: message.id})}><strong>{message.senderName}</strong><span>{message.platform} thread 需要確認・{message.text.slice(0, 48)}...</span></button>
+            <button type="button" key={message.id} className="dashboard-task-row dashboard-task-row--button" onClick={() => onNavigate('messages', {messageId: message.id})}><strong>{displayText(message.senderName, '未命名')}</strong><span>{message.platform} thread 需要確認・{truncateDisplayText(message.text, 48)}...</span></button>
           )) : <p>目前沒有待人工確認的 AI 判讀。</p>}
         </article>
       </section>

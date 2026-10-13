@@ -1,7 +1,8 @@
 import {useEffect, useState} from 'react';
-import type {AiReviewDetail, AiReviewItem, BusinessProfile, BusinessRiskScore, CaseDetail, MessageEvent, MessageReplyStatusHistoryItem, Platform, ReplyStatus} from '@casebee/shared';
-import {enrichBusinessRisk, excludeMessage, getCaseDetail, getGmailAuthUrl, getGmailStatus, getMessageReplyStatusHistory, getMessageReview, getMessages, importMessage, pollGmail, reanalyzeMessage, resolveReview, updateMessageReplyStatus, type ImportPipelineResult} from '../services/api';
+import type {AiReviewDetail, AiReviewItem, BusinessProfile, BusinessRiskScore, CaseDetail, GmailSkippedMessage, MessageEvent, MessageReplyStatusHistoryItem, Platform, ReplyStatus} from '@casebee/shared';
+import {enrichBusinessRisk, excludeMessage, excludeSenderForMessage, getCaseDetail, getGmailAuthUrl, getGmailStatus, getMessageReplyStatusHistory, getMessageReview, getMessages, getSkippedGmailMessages, importMessage, importSkippedGmailMessage, pollGmail, reanalyzeMessage, resolveReview, restoreMessage, updateMessageReplyStatus, type ImportPipelineResult} from '../services/api';
 import type {NavigateToPage} from '../App';
+import {displayText} from '../utils/displayText';
 
 const fieldLabels: Record<string, string> = {
   clientName: '客戶名稱',
@@ -37,7 +38,7 @@ function formatReviewValue(value: unknown) {
   if (typeof value === 'number') return `NT$ ${value.toLocaleString('zh-TW')}`;
   if (Array.isArray(value)) return value.length > 0 ? value.map(String).join('、') : '無';
   if (typeof value === 'object') return JSON.stringify(value);
-  return String(value);
+  return displayText(String(value), '未填寫');
 }
 
 function buildMessageNextStep(input: {hasCase: boolean; missingFields: string[]; hasSuggestedReply: boolean; riskLevel?: string}) {
@@ -94,6 +95,14 @@ const exclusionReasons = [
   '行事曆 / 會議邀請',
 ];
 
+const exclusionSourceLabels: Record<string, string> = {
+  manual_message: '單封排除',
+  manual_case: '案件手動排除',
+  sender_rule: '寄件者規則',
+  system_auto_case: '系統自動隱藏',
+  legacy: '舊版紀錄',
+};
+
 interface MessagesPageProps {
   onNavigate: NavigateToPage;
   targetMessageId?: string;
@@ -101,6 +110,8 @@ interface MessagesPageProps {
 
 export function MessagesPage({onNavigate, targetMessageId}: MessagesPageProps) {
   const [messages, setMessages] = useState<MessageEvent[]>([]);
+  const [excludedMessages, setExcludedMessages] = useState<MessageEvent[]>([]);
+  const [skippedGmailMessages, setSkippedGmailMessages] = useState<GmailSkippedMessage[]>([]);
   const [platform, setPlatform] = useState<Platform>('Manual');
   const [senderName, setSenderName] = useState('測試客戶');
   const [text, setText] = useState('你好，想詢問 Logo + 名片設計費用，預算 8000，月底前完成');
@@ -118,6 +129,8 @@ export function MessagesPage({onNavigate, targetMessageId}: MessagesPageProps) {
   const [isSyncingGmail, setIsSyncingGmail] = useState(false);
   const [excludeReason, setExcludeReason] = useState(exclusionReasons[0]);
   const [excludeStatus, setExcludeStatus] = useState('');
+  const [restoreStatus, setRestoreStatus] = useState('');
+  const [skippedGmailStatus, setSkippedGmailStatus] = useState('');
   const [reanalyzeStatus, setReanalyzeStatus] = useState('');
   const [isReanalyzing, setIsReanalyzing] = useState(false);
   const [reviewOnly, setReviewOnly] = useState(false);
@@ -128,13 +141,24 @@ export function MessagesPage({onNavigate, targetMessageId}: MessagesPageProps) {
   const [reviewStatus, setReviewStatus] = useState('');
   const [manualReviewValues, setManualReviewValues] = useState<Record<string, string>>({});
 
+  const refreshMessageLists = async () => {
+    const [active, excluded, skipped] = await Promise.all([getMessages('active'), getMessages('excluded'), getSkippedGmailMessages('pending')]);
+    setMessages(active);
+    setExcludedMessages(excluded);
+    setSkippedGmailMessages(skipped);
+  };
+
   useEffect(() => {
-    getMessages().then(setMessages).catch(() => setMessages([]));
+    refreshMessageLists().catch(() => {
+      setMessages([]);
+      setExcludedMessages([]);
+      setSkippedGmailMessages([]);
+    });
   }, []);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
-      getMessages().then(setMessages).catch(() => undefined);
+      refreshMessageLists().catch(() => undefined);
     }, 30_000);
 
     return () => window.clearInterval(timer);
@@ -282,7 +306,7 @@ export function MessagesPage({onNavigate, targetMessageId}: MessagesPageProps) {
       }, {});
       const skippedText = Object.entries(skippedSummary).map(([category, count]) => `${category} ${count}`).join('、') || '無';
       setGmailAssistantStatus(`Gmail 同步完成：掃描 ${result.checkedCount}，匯入 ${result.importedCount}，略過 ${result.skippedCount}（${skippedText}），失敗 ${result.failedCount}`);
-      setMessages(await getMessages());
+      await refreshMessageLists();
       setActiveFilter('Gmail');
     } catch (error) {
       setGmailAssistantStatus(error instanceof Error ? error.message : 'Gmail 同步失敗。');
@@ -309,10 +333,10 @@ export function MessagesPage({onNavigate, targetMessageId}: MessagesPageProps) {
 
     try {
       const result = await importMessage({platform, senderName, text});
-      setImportStatus(`已建立案件：${result.case.title}，提醒 ${result.alerts.length} 則`);
+      setImportStatus(`已建立案件：${displayText(result.case.title, '未命名案件')}，提醒 ${result.alerts.length} 則`);
       setLastResult(result);
       setBusinessRisk(null);
-      setMessages(await getMessages());
+      await refreshMessageLists();
     } catch (error) {
       setImportStatus(error instanceof Error ? error.message : '匯入失敗');
     }
@@ -326,15 +350,61 @@ export function MessagesPage({onNavigate, targetMessageId}: MessagesPageProps) {
     try {
       setExcludeStatus('排除郵件中...');
       const result = await excludeMessage(selectedMessage.id, excludeReason);
-      setMessages((current) => current.filter((message) => message.id !== selectedMessage.id));
       setSelectedMessageId(null);
-      const nextMessages = await getMessages();
-      setMessages(nextMessages);
+      await refreshMessageLists();
       setLastResult((current) => (current?.message.id === result.message.id ? null : current));
-      const learnedRuleText = result.learnedRule ? '未來同寄件者會自動略過。' : '';
-      setExcludeStatus(`${result.excludedCaseId ? '已排除郵件，並隱藏其自動建立的案件。' : '已排除郵件。'}${learnedRuleText}`);
+      setExcludeStatus(result.excludedCaseId ? '已排除單封郵件，並隱藏其自動建立的案件。' : '已排除單封郵件。');
     } catch (error) {
       setExcludeStatus(error instanceof Error ? error.message : '排除郵件失敗。');
+    }
+  };
+
+  const handleExcludeSelectedSender = async () => {
+    if (!selectedMessage) {
+      return;
+    }
+
+    try {
+      setExcludeStatus('建立寄件者排除規則中...');
+      const result = await excludeSenderForMessage(selectedMessage.id, excludeReason);
+      setSelectedMessageId(null);
+      await refreshMessageLists();
+      setLastResult((current) => (current?.message.id === result.message.id ? null : current));
+      setExcludeStatus(`${result.excludedCaseId ? '已排除郵件並隱藏其自動建立的案件；' : ''}已建立寄件者排除規則，未來同寄件者 Gmail 會自動略過。`);
+    } catch (error) {
+      setExcludeStatus(error instanceof Error ? error.message : '寄件者排除失敗。');
+    }
+  };
+
+  const handleRestoreExcludedMessage = async (messageId: string) => {
+    try {
+      setRestoreStatus('恢復郵件中...');
+      const result = await restoreMessage(messageId);
+      await refreshMessageLists();
+      setSelectedMessageId(result.message.id);
+      setRestoreStatus(result.restoredCaseId ? '已恢復郵件與系統自動隱藏的案件。' : '已恢復郵件。');
+    } catch (error) {
+      setRestoreStatus(error instanceof Error ? error.message : '恢復郵件失敗。');
+    }
+  };
+
+  const handleImportSkippedGmail = async (skippedId: string) => {
+    try {
+      setSkippedGmailStatus('重新匯入 Gmail 略過郵件中...');
+      const result = await importSkippedGmailMessage(skippedId);
+      await refreshMessageLists();
+      if (result.result?.message.id) {
+        setSelectedMessageId(result.result.message.id);
+        setSkippedGmailStatus('已重新匯入並進入既有分析流程。');
+      } else if (result.existingMessage?.id) {
+        setSelectedMessageId(result.existingMessage.id);
+        setSkippedGmailStatus(result.alreadyRestored ? '此 Gmail 已恢復過，已開啟既有訊息。' : '此 Gmail 已匯入過，未建立重複訊息。');
+      } else {
+        setSkippedGmailStatus('重新匯入完成，但沒有建立新訊息。');
+      }
+    } catch (error) {
+      setSkippedGmailStatus(error instanceof Error ? error.message : '重新匯入 Gmail 略過郵件失敗。');
+      await refreshMessageLists().catch(() => undefined);
     }
   };
 
@@ -349,8 +419,8 @@ export function MessagesPage({onNavigate, targetMessageId}: MessagesPageProps) {
       const result = await reanalyzeMessage(selectedMessage.id);
       setLastResult(result.case ? result : null);
       setSelectedCaseDetail(result.caseDetail);
-      setMessages(await getMessages());
-      setReanalyzeStatus(`重新分析完成：${result.extraction.projectItem ?? '未擷取專案'}，模型 ${result.modelName}`);
+      await refreshMessageLists();
+      setReanalyzeStatus(`重新分析完成：${displayText(result.extraction.projectItem, '未擷取專案')}，模型 ${result.modelName}`);
     } catch (error) {
       setReanalyzeStatus(error instanceof Error ? error.message : '重新分析失敗。');
     } finally {
@@ -360,7 +430,7 @@ export function MessagesPage({onNavigate, targetMessageId}: MessagesPageProps) {
 
   const refreshSelectedReview = async () => {
     if (!selectedMessage) return;
-    const [nextMessages, nextReview] = await Promise.all([getMessages(), getMessageReview(selectedMessage.id)]);
+    const [nextMessages, nextReview] = await Promise.all([getMessages('active'), getMessageReview(selectedMessage.id)]);
     setMessages(nextMessages);
     setReviewDetail(nextReview);
     if (selectedMessage.caseId) {
@@ -482,8 +552,8 @@ export function MessagesPage({onNavigate, targetMessageId}: MessagesPageProps) {
                 <span>{message.platform}</span>
                 <small>{new Date(message.timestamp).toLocaleString('zh-TW', {month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'})}</small>
               </div>
-              <strong>{message.senderName}</strong>
-              <p>{splitMailSubject(message.text).subject || message.text}</p>
+              <strong>{displayText(message.senderName, '未命名')}</strong>
+              <p>{displayText(splitMailSubject(message.text).subject || message.text, '無主旨')}</p>
               <small>{message.caseId ? '已連結案件' : '尚未建案'}</small>
               <small>{replyStatusLabels[message.replyStatus]}</small>
               {message.reviewStatus === 'pending' ? <small>需人工確認</small> : null}
@@ -495,6 +565,40 @@ export function MessagesPage({onNavigate, targetMessageId}: MessagesPageProps) {
               <p>請切換平台篩選、等待 Gmail 自動同步，或使用手動匯入建立測試訊息。</p>
             </section>
           ) : null}
+
+          <details className="message-action-box">
+            <summary>已排除郵件 {excludedMessages.length}</summary>
+            {restoreStatus ? <p className="import-form__status">{restoreStatus}</p> : null}
+            {excludedMessages.length > 0 ? excludedMessages.map((message) => (
+              <article key={message.id} className="message-thread-card">
+                <div className="message-thread-card__top">
+                  <span>{message.platform}</span>
+                  <small>{new Date(message.timestamp).toLocaleString('zh-TW', {month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'})}</small>
+                </div>
+                <strong>{displayText(message.senderName, '未命名')}</strong>
+                <p>{displayText(splitMailSubject(message.text).subject || message.text, '無主旨')}</p>
+                <small>{exclusionSourceLabels[message.exclusionSource ?? 'legacy'] ?? message.exclusionSource ?? '舊版紀錄'}・{displayText(message.excludedReason, '未記錄原因')}</small>
+                <button type="button" onClick={() => void handleRestoreExcludedMessage(message.id)}>恢復郵件</button>
+              </article>
+            )) : <p>目前沒有已排除郵件。</p>}
+          </details>
+          <details className="message-action-box">
+            <summary>Gmail 自動略過 {skippedGmailMessages.length}</summary>
+            {skippedGmailStatus ? <p className="import-form__status">{skippedGmailStatus}</p> : null}
+            {skippedGmailMessages.length > 0 ? skippedGmailMessages.map((item) => (
+              <article key={item.id} className="message-thread-card">
+                <div className="message-thread-card__top">
+                  <span>{item.category}</span>
+                  <small>{new Date(item.skippedAt).toLocaleString('zh-TW', {month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'})}</small>
+                </div>
+                <strong>{displayText(item.sender, '未知寄件者')}</strong>
+                <p>{displayText(item.subject || item.snippet, '無主旨')}</p>
+                <small>{displayText(item.reason, '未記錄原因')}・來源 {displayText(item.source, 'unknown')}</small>
+                {item.lastError ? <small>上次失敗：{displayText(item.lastError, '')}</small> : null}
+                <button type="button" onClick={() => void handleImportSkippedGmail(item.id)}>重新匯入</button>
+              </article>
+            )) : <p>目前沒有待處理的 Gmail 自動略過紀錄。</p>}
+          </details>
         </aside>
 
         <section className="message-analysis-stack">
@@ -511,14 +615,14 @@ export function MessagesPage({onNavigate, targetMessageId}: MessagesPageProps) {
                 <section className="analysis-case-summary">
                   <span className={`risk-badge risk-badge--${visibleCase.riskLevel}`}>{visibleCase.riskLevel}</span>
                   <div>
-                    <strong>{visibleCase.title}</strong>
+                    <strong>{displayText(visibleCase.title, '未命名案件')}</strong>
                     <p>{visibleCase.code}｜{visibleCase.status}</p>
                   </div>
                 </section>
               ) : null}
               <div className="entity-grid">
-                <span>客戶名稱</span><strong>{visibleExtraction.clientName ?? '未擷取'}</strong>
-                <span>專案項目</span><strong>{visibleExtraction.projectItem ?? '未擷取'}</strong>
+                <span>客戶名稱</span><strong>{displayText(visibleExtraction.clientName, '未擷取')}</strong>
+                <span>專案項目</span><strong>{displayText(visibleExtraction.projectItem, '未擷取')}</strong>
                 <span>預算 / 報價金額</span><strong>{visibleExtraction.quoteAmount ? `$${visibleExtraction.quoteAmount.toLocaleString()}` : '未擷取'}</strong>
                 <span>預期到期時間</span><strong>{visibleExtraction.expectedDeadline ?? '未擷取'}</strong>
                 <span>需求目的</span><strong>{visibleExtraction.intent}</strong>
@@ -526,7 +630,7 @@ export function MessagesPage({onNavigate, targetMessageId}: MessagesPageProps) {
                 <span>缺少資料</span><strong>{visibleExtraction.missingFields.length > 0 ? visibleExtraction.missingFields.map(formatField).join('、') : '無'}</strong>
               </div>
               <span className="analysis-label">案件摘要</span>
-              <p className="analysis-text">{visibleExtraction.summary}</p>
+              <p className="analysis-text" style={{whiteSpace: 'pre-line'}}>{displayText(visibleExtraction.summary, '尚無摘要', {preserveLines: true})}</p>
               {reviewDetail && reviewDetail.items.length > 0 ? (
                 <section className="review-workflow-card">
                   <div className="messages-panel-heading">
@@ -619,16 +723,16 @@ export function MessagesPage({onNavigate, targetMessageId}: MessagesPageProps) {
                 {visibleSimilarCases.map((item) => (
                   <article key={item.id} className="similar-card">
                     <div className="similar-card__top">
-                      <strong>{item.title}</strong>
+                      <strong>{displayText(item.title, '未命名案例')}</strong>
                       <span>相似 {item.score}%</span>
                     </div>
-                    <p>{item.summary}</p>
+                    <p>{displayText(item.summary, '尚無摘要')}</p>
                     <div className="similar-card__meta">
                       <span>{item.platform}</span>
                       <span>{item.quoteAmount ? `$${item.quoteAmount.toLocaleString()}` : '未定價'}</span>
                       <span>{item.outcome}</span>
                     </div>
-                    <blockquote>{item.replyExample}</blockquote>
+                    <blockquote>{displayText(item.replyExample, '')}</blockquote>
                   </article>
                 ))}
               </div> : null}
@@ -647,7 +751,7 @@ export function MessagesPage({onNavigate, targetMessageId}: MessagesPageProps) {
             <div className="message-exclusion-box">
               <div>
                 <h3>這封不相關？</h3>
-                <p>排除後會從訊息串流隱藏；若它單獨建立了一張案件卡，也會從 Kanban 隱藏。</p>
+                <p>單封排除只隱藏這封郵件；寄件者排除會另外建立 Gmail sender rule，未來同寄件者會自動略過。</p>
               </div>
               <label>
                 排除原因
@@ -655,7 +759,8 @@ export function MessagesPage({onNavigate, targetMessageId}: MessagesPageProps) {
                   {exclusionReasons.map((reason) => <option key={reason} value={reason}>{reason}</option>)}
                 </select>
               </label>
-              <button type="button" onClick={handleExcludeSelectedMessage}>排除這封郵件</button>
+              <button type="button" onClick={handleExcludeSelectedMessage}>只排除這封郵件</button>
+              <button type="button" onClick={handleExcludeSelectedSender}>排除這個寄件者</button>
               {excludeStatus ? <p>{excludeStatus}</p> : null}
             </div>
           ) : null}
@@ -667,7 +772,7 @@ export function MessagesPage({onNavigate, targetMessageId}: MessagesPageProps) {
           <article className="page-card message-chat-card">
             <div className="messages-panel-heading">
               <div>
-                <h2>{selectedMessage?.senderName ?? '尚無訊息'}</h2>
+                <h2>{displayText(selectedMessage?.senderName, '尚無訊息')}</h2>
                 <p>{selectedMessage ? `${selectedMessage.platform}・${new Date(selectedMessage.timestamp).toLocaleString('zh-TW')}` : '等待訊息'}</p>
               </div>
               <span>{selectedMessage?.caseId ? '已建案' : '待處理'}</span>
@@ -675,14 +780,14 @@ export function MessagesPage({onNavigate, targetMessageId}: MessagesPageProps) {
             <div className="message-conversation">
               {selectedMessage ? (
                 <article className="message-bubble">
-                  {selectedMailContent.subject ? <strong className="message-bubble__subject">{selectedMailContent.subject}</strong> : null}
-                  <pre>{selectedMailContent.body || selectedMessage.text}</pre>
+                  {selectedMailContent.subject ? <strong className="message-bubble__subject">{displayText(selectedMailContent.subject, '')}</strong> : null}
+                  <pre>{displayText(selectedMailContent.body || selectedMessage.text, '', {preserveLines: true})}</pre>
                   <small>{new Date(selectedMessage.timestamp).toLocaleString('zh-TW')}</small>
                 </article>
               ) : <p>目前沒有訊息。</p>}
               {visibleExtraction?.suggestedReply ? (
                 <article className="message-bubble message-bubble--ai">
-                  <p>{visibleExtraction.suggestedReply}</p>
+                  <p>{displayText(visibleExtraction.suggestedReply, '', {preserveLines: true})}</p>
                   <small>AI 建議回覆</small>
                 </article>
               ) : null}

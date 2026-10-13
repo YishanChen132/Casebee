@@ -1,15 +1,40 @@
 import {Buffer} from 'node:buffer';
 import {google} from 'googleapis';
+import {findGmailSkippedMessageById, markGmailSkippedMessageError, markGmailSkippedMessageRestored, markGmailSkippedMessageRetry, upsertGmailSkippedMessage} from '../repositories/gmailSkippedMessagesRepository.js';
 import {findSenderEmailExclusionRule} from '../repositories/messageExclusionRulesRepository.js';
-import {findMessageByGmailMessageId} from '../repositories/messagesRepository.js';
+import {createMessage, findLatestCaseIdByThreadId, findMessageByGmailMessageId} from '../repositories/messagesRepository.js';
 import {getPlatformConnection, markPlatformSynced, upsertPlatformConnection} from '../repositories/platformConnectionsRepository.js';
 import {inferCustomerName} from './customerNameInference.js';
 import {normalizeEmailBody} from './emailBodyNormalizer.js';
+import {preprocessEmail} from './emailPreprocessor.js';
 import {importMessage} from './messageImportService.js';
+import {classifyPreparedMessage, type MessageType} from './messageClassifier.js';
 
 const gmailScopes = ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/userinfo.email'];
 
 type GmailTriageCategory = 'case_candidate' | 'learned_exclusion' | 'calendar_invite' | 'verification_code' | 'newsletter' | 'automated_notification' | 'announcement';
+type ClassificationBucket = 'NON_CASE' | 'CASE_RELATED' | 'UNCERTAIN';
+
+const nonCaseTypes = new Set<MessageType>(['announcement', 'calendar_invite', 'newsletter', 'system_notification']);
+const caseRelatedTypes = new Set<MessageType>(['collaboration_invite', 'quote_inquiry', 'revision_request', 'deadline_or_material_risk', 'confirmation_or_contract']);
+
+function bucketFor(type: MessageType): ClassificationBucket {
+  if (nonCaseTypes.has(type)) return 'NON_CASE';
+  if (caseRelatedTypes.has(type)) return 'CASE_RELATED';
+  return 'UNCERTAIN';
+}
+
+export function classifySkippedGmailRecovery(text: string, hasExistingThreadCase: boolean) {
+  const prepared = preprocessEmail(text);
+  const classification = classifyPreparedMessage(prepared);
+  const classificationBucket = bucketFor(classification.type);
+  return {
+    classification,
+    classificationBucket,
+    shouldImportAsCase: hasExistingThreadCase || classificationBucket === 'CASE_RELATED',
+    shouldCreateReviewMessage: !hasExistingThreadCase && classificationBucket === 'UNCERTAIN',
+  };
+}
 
 interface GmailTriageResult {
   shouldImport: boolean;
@@ -89,6 +114,10 @@ function parseSenderName(from: string) {
 
 function parseSenderEmail(from: string) {
   return from.match(/<(.+)>/)?.[1] ?? from;
+}
+
+function snippetFromText(text: string) {
+  return text.replace(/\s+/g, ' ').trim().slice(0, 240);
 }
 
 function includesAny(text: string, keywords: string[]) {
@@ -175,7 +204,7 @@ export async function getGmailStatus() {
   };
 }
 
-export async function pollGmailMessages() {
+async function getAuthorizedGmailContext() {
   const connection = await getPlatformConnection('Gmail');
   const config = getGmailConfigStatus();
   if (!config.configured) {
@@ -192,7 +221,113 @@ export async function pollGmailMessages() {
     expiry_date: connection.expiryDate ?? undefined,
   });
 
-  const gmail = google.gmail({version: 'v1', auth: oauth2Client});
+  return {gmail: google.gmail({version: 'v1', auth: oauth2Client}), connection};
+}
+
+async function persistSkipped(input: {gmailMessageId: string; gmailThreadId?: string | null; connectionScope?: string | null; sender?: string; subject?: string; snippet?: string; category: string; reason: string; source: string}) {
+  await upsertGmailSkippedMessage(input);
+}
+
+async function importFetchedGmailMessage(input: {gmailMessageId: string; overrideExclusion?: boolean}) {
+  const {gmail, connection} = await getAuthorizedGmailContext();
+  const existingMessage = await findMessageByGmailMessageId(input.gmailMessageId);
+  if (existingMessage) {
+    return {result: null, existingMessage};
+  }
+
+  const message = await gmail.users.messages.get({userId: 'me', id: input.gmailMessageId, format: 'full'});
+  const headers = message.data.payload?.headers ?? [];
+  const from = headerValue(headers, 'from') || 'Unknown Sender';
+  const subject = headerValue(headers, 'subject');
+  const senderEmail = parseSenderEmail(from);
+  const body = extractGmailBodyText(message.data.payload as GmailPayloadPart | undefined);
+  const text = [subject ? `Subject: ${subject}` : '', body.readableContent].filter(Boolean).join('\n\n').trim();
+
+  if (!text) {
+    throw new Error('Gmail message has no readable content');
+  }
+
+  const existingThreadCaseId = message.data.threadId ? await findLatestCaseIdByThreadId(message.data.threadId) : null;
+  const recovery = classifySkippedGmailRecovery(text, Boolean(existingThreadCaseId));
+  const {classification, classificationBucket} = recovery;
+
+  if (!input.overrideExclusion) {
+    const learnedRule = await findSenderEmailExclusionRule('Gmail', senderEmail);
+    if (learnedRule) {
+      await persistSkipped({gmailMessageId: input.gmailMessageId, gmailThreadId: message.data.threadId ?? null, connectionScope: connection.accountEmail, sender: from, subject, snippet: message.data.snippet ?? snippetFromText(text), category: 'learned_exclusion', reason: `符合使用者排除規則：${learnedRule.reason}`, source: 'sender_rule'});
+      return {result: null, existingMessage: null};
+    }
+
+    const triage = triageGmailMessage({from, subject, text});
+    if (!triage.shouldImport) {
+      await persistSkipped({gmailMessageId: input.gmailMessageId, gmailThreadId: message.data.threadId ?? null, connectionScope: connection.accountEmail, sender: from, subject, snippet: message.data.snippet ?? snippetFromText(text), category: triage.category, reason: triage.reason, source: 'gmail_triage'});
+      return {result: null, existingMessage: null};
+    }
+  }
+
+  if (input.overrideExclusion && !recovery.shouldImportAsCase) {
+    const restoredMessage = await createMessage({
+      platform: 'Gmail',
+      senderId: senderEmail,
+      senderName: inferCustomerName({from, senderName: parseSenderName(from), senderEmail, subject, text}),
+      text,
+      timestamp: message.data.internalDate ? new Date(Number(message.data.internalDate)).toISOString() : undefined,
+      threadId: message.data.threadId ?? undefined,
+      rawPayload: {
+        gmailMessageId: input.gmailMessageId,
+        threadId: message.data.threadId ?? null,
+        subject,
+        originalSenderName: parseSenderName(from),
+        bodySource: body.source,
+        bodyWasHtml: body.wasHtml,
+        quoteRemoved: body.quoteRemoved,
+        signatureDetected: body.signatureDetected,
+        originalBody: body.original,
+        normalizedText: body.text,
+        readableContent: body.readableContent,
+        quotedText: body.quotedText || null,
+        signatureText: body.signatureText || null,
+        exclusionOverride: 'user_requested_once',
+        classificationType: classification.type,
+        classificationBucket,
+        classificationConfidence: classification.confidence,
+        classificationReasons: classification.reasons,
+        reviewStatus: classificationBucket === 'UNCERTAIN' ? 'pending' : 'none',
+        reviewReason: classificationBucket === 'UNCERTAIN' ? '使用者恢復的 Gmail 分類為 UNCERTAIN，需人工確認是否建案。' : null,
+      },
+    });
+    return {result: null, existingMessage: restoredMessage};
+  }
+
+  const result = await importMessage({
+    platform: 'Gmail',
+    senderId: senderEmail,
+    senderName: inferCustomerName({from, senderName: parseSenderName(from), senderEmail, subject, text}),
+    text,
+    timestamp: message.data.internalDate ? new Date(Number(message.data.internalDate)).toISOString() : undefined,
+    threadId: message.data.threadId ?? undefined,
+    rawPayload: {
+      gmailMessageId: input.gmailMessageId,
+      threadId: message.data.threadId ?? null,
+      subject,
+      originalSenderName: parseSenderName(from),
+      bodySource: body.source,
+      bodyWasHtml: body.wasHtml,
+      quoteRemoved: body.quoteRemoved,
+      signatureDetected: body.signatureDetected,
+      originalBody: body.original,
+      normalizedText: body.text,
+      readableContent: body.readableContent,
+      quotedText: body.quotedText || null,
+      signatureText: body.signatureText || null,
+      exclusionOverride: input.overrideExclusion ? 'user_requested_once' : null,
+    },
+  });
+  return {result, existingMessage: null};
+}
+
+export async function pollGmailMessages() {
+  const {gmail, connection} = await getAuthorizedGmailContext();
   const maxResults = Number(process.env.GMAIL_POLL_MAX_RESULTS ?? 10);
   const query = process.env.GMAIL_POLL_QUERY ?? 'newer_than:30d';
   const list = await gmail.users.messages.list({userId: 'me', maxResults: Number.isFinite(maxResults) ? maxResults : 10, q: query});
@@ -219,7 +354,7 @@ export async function pollGmailMessages() {
       const subject = headerValue(headers, 'subject');
       const senderEmail = parseSenderEmail(from);
       const body = extractGmailBodyText(message.data.payload as GmailPayloadPart | undefined);
-      const text = [subject ? `Subject: ${subject}` : '', body.text].filter(Boolean).join('\n\n').trim();
+      const text = [subject ? `Subject: ${subject}` : '', body.readableContent].filter(Boolean).join('\n\n').trim();
 
       if (!text) {
         emptyCount += 1;
@@ -228,12 +363,14 @@ export async function pollGmailMessages() {
 
       const learnedRule = await findSenderEmailExclusionRule('Gmail', senderEmail);
       if (learnedRule) {
+        await persistSkipped({gmailMessageId: item.id, gmailThreadId: message.data.threadId ?? null, connectionScope: connection.accountEmail, sender: from, subject, snippet: message.data.snippet ?? snippetFromText(text), category: 'learned_exclusion', reason: `符合使用者排除規則：${learnedRule.reason}`, source: 'sender_rule'});
         skipped.push({gmailMessageId: item.id, category: 'learned_exclusion', reason: `符合使用者排除規則：${learnedRule.reason}`});
         continue;
       }
 
       const triage = triageGmailMessage({from, subject, text});
       if (!triage.shouldImport) {
+        await persistSkipped({gmailMessageId: item.id, gmailThreadId: message.data.threadId ?? null, connectionScope: connection.accountEmail, sender: from, subject, snippet: message.data.snippet ?? snippetFromText(text), category: triage.category, reason: triage.reason, source: 'gmail_triage'});
         skipped.push({gmailMessageId: item.id, category: triage.category, reason: triage.reason});
         continue;
       }
@@ -246,7 +383,21 @@ export async function pollGmailMessages() {
           text,
           timestamp: message.data.internalDate ? new Date(Number(message.data.internalDate)).toISOString() : undefined,
           threadId: message.data.threadId ?? undefined,
-          rawPayload: {gmailMessageId: item.id, threadId: message.data.threadId ?? null, subject, originalSenderName: parseSenderName(from), bodySource: body.source, bodyWasHtml: body.wasHtml, originalBody: body.original},
+          rawPayload: {
+            gmailMessageId: item.id,
+            threadId: message.data.threadId ?? null,
+            subject,
+            originalSenderName: parseSenderName(from),
+            bodySource: body.source,
+            bodyWasHtml: body.wasHtml,
+            quoteRemoved: body.quoteRemoved,
+            signatureDetected: body.signatureDetected,
+            originalBody: body.original,
+            normalizedText: body.text,
+            readableContent: body.readableContent,
+            quotedText: body.quotedText || null,
+            signatureText: body.signatureText || null,
+          },
         }),
       );
     } catch (error) {
@@ -266,4 +417,30 @@ export async function pollGmailMessages() {
     skipped,
     failed,
   };
+}
+
+export async function importSkippedGmailMessage(skippedId: string) {
+  const skipped = await findGmailSkippedMessageById(skippedId);
+  if (!skipped) {
+    return null;
+  }
+  if (skipped.restoredMessageId) {
+    const existingMessage = await findMessageByGmailMessageId(skipped.gmailMessageId);
+    return {skipped, result: null, existingMessage, alreadyRestored: true};
+  }
+
+  await markGmailSkippedMessageRetry(skipped.id);
+  try {
+    const imported = await importFetchedGmailMessage({gmailMessageId: skipped.gmailMessageId, overrideExclusion: true});
+    const messageId = imported.result?.message.id ?? imported.existingMessage?.id;
+    if (!messageId) {
+      throw new Error('Gmail message was not imported and no duplicate message exists');
+    }
+    const restored = await markGmailSkippedMessageRestored(skipped.id, messageId);
+    return {skipped: restored ?? skipped, result: imported.result, existingMessage: imported.existingMessage, alreadyRestored: Boolean(imported.existingMessage)};
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to re-import skipped Gmail message';
+    await markGmailSkippedMessageError(skipped.id, message);
+    throw new Error(message);
+  }
 }

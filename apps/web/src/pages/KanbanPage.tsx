@@ -2,6 +2,7 @@ import {useEffect, useState} from 'react';
 import type {CaseDetail, CaseRecord, CaseStatus} from '@casebee/shared';
 import {enrichBusinessRisk, getCaseDetail, getCases, resolveAlert, updateCase, updateCaseStatus} from '../services/api';
 import type {NavigateToPage} from '../App';
+import {displayText, truncateDisplayText} from '../utils/displayText';
 
 const caseStatuses: CaseStatus[] = ['潛在詢問', '需求確認中', '已報價', '等待回覆', '已確認合作', '進行中', '等待素材', '待修改', '待交付', '已完成', '已流失'];
 
@@ -123,7 +124,7 @@ export function KanbanPage({onNavigate, targetCaseId}: KanbanPageProps) {
     setEditStatus(caseDetail.case.status);
     setEditQuoteAmount(caseDetail.case.quoteAmount === null ? '' : String(caseDetail.case.quoteAmount));
     setEditExpectedDeadline(caseDetail.case.expectedDeadline ?? '');
-    setEditSummary(caseDetail.case.summary);
+    setEditSummary(displayText(caseDetail.case.summary, '', {preserveLines: true}));
     setSaveMessage('');
     setBusinessRiskMessage('');
     setAlertMessage('');
@@ -302,8 +303,8 @@ export function KanbanPage({onNavigate, targetCaseId}: KanbanPageProps) {
                   <span>{item.platform}・{item.status}</span>
                   <span className={`risk-badge risk-badge--${item.riskLevel}`}>{item.riskLevel}</span>
                 </div>
-                <strong>{item.customerName}</strong>
-                <p>{item.projectItem}</p>
+                <strong>{truncateDisplayText(item.customerName, 28, '未命名案件')}</strong>
+                <p>{truncateDisplayText(item.projectItem, 36, '待釐清需求')}</p>
                 <div className="case-card__meta">
                   <span>{formatMoney(item.quoteAmount)}</span>
                   <span>{item.expectedDeadline ?? '未填期限'}</span>
@@ -326,8 +327,8 @@ export function KanbanPage({onNavigate, targetCaseId}: KanbanPageProps) {
           <div className="case-modal__panel">
             <div className="case-modal__header">
               <div>
-                <span>{caseDetail ? `${caseDetail.case.code}・${caseDetail.case.projectItem}` : selectedCase ? `${selectedCase.code}・${selectedCase.projectItem}` : '載入中'}</span>
-                <h2>{caseDetail?.case.customerName ?? selectedCase?.customerName ?? '案件詳情'}</h2>
+                <span>{caseDetail ? `${caseDetail.case.code}・${displayText(caseDetail.case.projectItem, '待釐清需求')}` : selectedCase ? `${selectedCase.code}・${displayText(selectedCase.projectItem, '待釐清需求')}` : '載入中'}</span>
+                <h2>{displayText(caseDetail?.case.customerName ?? selectedCase?.customerName, '案件詳情')}</h2>
               </div>
               <button className="case-modal__close" type="button" onClick={() => setSelectedCaseId(null)} aria-label="關閉案件詳情">×</button>
             </div>
@@ -337,15 +338,15 @@ export function KanbanPage({onNavigate, targetCaseId}: KanbanPageProps) {
                 <section className="detail-section detail-section--hero">
                   <h3>專案總覽</h3>
                   <div className="detail-grid">
-                    <span>客戶</span><strong>{caseDetail.case.customerName}</strong>
-                    <span>專案</span><strong>{caseDetail.case.projectItem}</strong>
+                    <span>客戶</span><strong>{displayText(caseDetail.case.customerName, '未命名案件')}</strong>
+                    <span>專案</span><strong>{displayText(caseDetail.case.projectItem, '待釐清需求')}</strong>
                     <span>來源</span><strong>{caseDetail.case.platform}</strong>
                     <span>狀態</span><strong>{caseDetail.case.status}</strong>
                     <span>報價</span><strong>{formatMoney(caseDetail.case.quoteAmount)}</strong>
                     <span>期限</span><strong>{caseDetail.case.expectedDeadline ?? '未填'}</strong>
                     <span>風險</span><strong>{formatRiskLevel(caseDetail.case.riskLevel)}</strong>
                   </div>
-                  <p>{caseDetail.case.summary}</p>
+                  <p style={{whiteSpace: 'pre-line'}}>{displayText(caseDetail.case.summary, '尚無摘要', {preserveLines: true})}</p>
                   <div className="detail-action-row">
                     <button type="button" onClick={() => onNavigate('messages', {messageId: caseDetail.messages[0]?.id})}>回看來源訊息</button>
                     <button type="button" onClick={() => onNavigate('customers', {customerId: caseDetail.case.customerId})}>查看客戶資料</button>
@@ -410,8 +411,8 @@ export function KanbanPage({onNavigate, targetCaseId}: KanbanPageProps) {
                   <h3>訊息紀錄</h3>
                   {caseDetail.messages.length > 0 ? caseDetail.messages.map((message) => (
                     <article key={message.id} className="detail-card">
-                      <strong>{message.senderName}・{message.platform}</strong>
-                      <p>{message.text}</p>
+                      <strong>{displayText(message.senderName, '未命名')}・{message.platform}</strong>
+                      <p style={{whiteSpace: 'pre-line'}}>{displayText(message.text, '', {preserveLines: true})}</p>
                       <small>{new Date(message.timestamp).toLocaleString('zh-TW')}</small>
                     </article>
                   )) : <p>尚無訊息紀錄。</p>}
@@ -422,8 +423,8 @@ export function KanbanPage({onNavigate, targetCaseId}: KanbanPageProps) {
                   {caseDetail.aiExtractions.length > 0 ? caseDetail.aiExtractions.map((extraction, index) => (
                     <article key={`${extraction.intent}-${index}`} className="detail-card">
                       <strong>{extraction.intent}</strong>
-                      <p>{extraction.summary}</p>
-                      <blockquote>{extraction.suggestedReply}</blockquote>
+                      <p style={{whiteSpace: 'pre-line'}}>{displayText(extraction.summary, '尚無摘要', {preserveLines: true})}</p>
+                      <blockquote>{displayText(extraction.suggestedReply, '', {preserveLines: true})}</blockquote>
                     </article>
                   )) : <p>尚無 AI 擷取資料。</p>}
                 </section>

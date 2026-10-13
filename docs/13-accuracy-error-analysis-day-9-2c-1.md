@@ -453,3 +453,41 @@ Regression result after P5:
 - Thread context RAG-on full overall: `1.000`.
 - RAG fact-field delta remains `0`.
 - `npm run classification:p4 --workspace @casebee/api`: passed, 14/14, bucket accuracy `1.000`.
+
+## P6-A Gmail HTML Content Normalization
+
+Goal:
+
+- Stop new Gmail imports from persisting raw HTML tags into message text, extraction summaries, or case summaries.
+- Keep frontend rendering as a final display guard only, not as the primary data-cleaning mechanism.
+- Produce a dry-run repair preview for `#CB-909255` and `#CB-907527` without changing historical database rows.
+
+RCA:
+
+- The pollution source was Gmail body parsing and summary construction receiving HTML-like text, plus historical persisted data.
+- React rendering was not the source of the tags; it displayed stored text safely as text.
+- Existing historical summary data for the target cases already contains truncated fragments such as `<fo...`, so repaired summaries must be treated as review-needed rather than guaranteed complete.
+
+Implemented safeguards:
+
+- Shared normalizer handles HTML-to-text conversion, entity decoding, block/list/table line breaks, unsafe skipped tags, malformed dangling tag fragments, quote removal, and signature detection.
+- Gmail import stores normalized readable content and raw-payload metadata such as `bodySource`, `bodyWasHtml`, `quoteRemoved`, `signatureDetected`, `originalBody`, `normalizedText`, and `readableContent`.
+- Extraction summary construction normalizes body text before composing persisted summary strings.
+- Kanban and Messages pages sanitize display text as defense in depth.
+
+Dry-run result:
+
+- Report: `apps/api/p6a-html-content-repair-dry-run-1791803929481.json`.
+- `appliesChanges`: `false`.
+- Rows previewed: `3` across `#CB-909255` and `#CB-907527`.
+- All rows are marked `needsHumanReview: true` because historical summaries are truncated/incomplete after removing HTML fragments.
+
+Regression result after P6-A:
+
+- `npm run smoke`: passed.
+- `npm run type-check`: passed.
+- `npm run build`: passed.
+- `git diff --check`: passed.
+- `npm run accuracy --workspace @casebee/api`: passed.
+- `npm run classification:p4 --workspace @casebee/api`: passed, 14/14, bucket accuracy `1.000`.
+- `npm run comparison:p5 --workspace @casebee/api`: passed, weak-field average remains `1.000`, `modelCallsAdded: 0`.

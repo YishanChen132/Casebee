@@ -2,6 +2,7 @@ import {useEffect, useState} from 'react';
 import type {CustomerDetail, CustomerSummary} from '@casebee/shared';
 import {enrichBusinessRisk, getCustomerDetail, getCustomers} from '../services/api';
 import type {NavigateToPage} from '../App';
+import {displayText} from '../utils/displayText';
 
 function formatDate(value: string | null) {
   return value ? new Date(value).toLocaleString('zh-TW') : '尚無案件';
@@ -105,8 +106,8 @@ export function CustomersPage({onNavigate, targetCustomerId}: CustomersPageProps
             <button key={customer.id} type="button" className="customer-card" onClick={() => setSelectedCustomerId(customer.id)}>
               <div className="customer-card__top">
                 <div>
-                  <strong>{customer.name}</strong>
-                  <span>{customer.platform}・{customer.contactHandle}</span>
+                  <strong>{displayText(customer.name, '未命名客戶')}</strong>
+                  <span>{customer.platform}・{displayText(customer.contactHandle, '')}</span>
                 </div>
                 <span>{customer.riskCaseCount > 0 ? `風險 ${customer.riskCaseCount}` : '正常'}</span>
               </div>
@@ -129,7 +130,7 @@ export function CustomersPage({onNavigate, targetCustomerId}: CustomersPageProps
             <div className="case-modal__header">
               <div>
                 <span>{customerDetail?.customer.platform ?? '載入中'}</span>
-                <h2>{customerDetail?.customer.name ?? '客戶詳情'}</h2>
+                <h2>{displayText(customerDetail?.customer.name, '客戶詳情')}</h2>
               </div>
               <button className="case-modal__close" type="button" onClick={() => setSelectedCustomerId(null)} aria-label="關閉客戶詳情">×</button>
             </div>
@@ -140,7 +141,7 @@ export function CustomersPage({onNavigate, targetCustomerId}: CustomersPageProps
                   <h3>客戶總覽</h3>
                   <div className="detail-grid">
                     <span>聯絡來源</span><strong>{customerDetail.customer.platform}</strong>
-                    <span>聯絡識別</span><strong>{customerDetail.customer.contactHandle}</strong>
+                    <span>聯絡識別</span><strong>{displayText(customerDetail.customer.contactHandle, '')}</strong>
                     <span>案件總數</span><strong>{customerDetail.customer.caseCount}</strong>
                     <span>進行中</span><strong>{customerDetail.customer.activeCaseCount}</strong>
                     <span>風險案件</span><strong>{customerDetail.customer.riskCaseCount}</strong>
@@ -172,8 +173,8 @@ export function CustomersPage({onNavigate, targetCustomerId}: CustomersPageProps
                   <h3>案件紀錄</h3>
                   {customerDetail.cases.length > 0 ? customerDetail.cases.map((item) => (
                     <article key={item.id} className="detail-card">
-                      <strong>{item.title}</strong>
-                      <p>{item.summary}</p>
+                      <strong>{displayText(item.title, '未命名案件')}</strong>
+                      <p style={{whiteSpace: 'pre-line'}}>{displayText(item.summary, '尚無摘要', {preserveLines: true})}</p>
                       <small>{item.status}・{item.quoteAmount ? `NT$ ${item.quoteAmount.toLocaleString('zh-TW')}` : '未報價'}・{item.expectedDeadline ?? '未填期限'}</small>
                     </article>
                   )) : <p>尚無案件紀錄。</p>}
@@ -183,8 +184,8 @@ export function CustomersPage({onNavigate, targetCustomerId}: CustomersPageProps
                   <h3>最近訊息</h3>
                   {customerDetail.messages.length > 0 ? customerDetail.messages.map((message) => (
                     <article key={message.id} className="detail-card">
-                      <strong>{message.platform}・{message.senderName}</strong>
-                      <p>{message.text}</p>
+                      <strong>{message.platform}・{displayText(message.senderName, '未命名')}</strong>
+                      <p style={{whiteSpace: 'pre-line'}}>{displayText(message.text, '', {preserveLines: true})}</p>
                       <small>{new Date(message.timestamp).toLocaleString('zh-TW')}</small>
                     </article>
                   )) : <p>尚無訊息紀錄。</p>}

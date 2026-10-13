@@ -1,0 +1,2 @@
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS exclusion_source TEXT;
+ALTER TABLE cases ADD COLUMN IF NOT EXISTS exclusion_source TEXT;

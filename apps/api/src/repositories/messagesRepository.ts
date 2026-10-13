@@ -1,26 +1,36 @@
 import {randomUUID} from 'node:crypto';
-import type {MessageEvent, MessageReplyStatusHistoryItem, Platform, ReplyStatus, ReplyStatusSource} from '@casebee/shared';
+import type {ExclusionSource, MessageEvent, MessageReplyStatusHistoryItem, Platform, ReplyStatus, ReplyStatusSource} from '@casebee/shared';
 import {pool} from '../db/pool.js';
 import {upsertSenderEmailExclusionRule} from './messageExclusionRulesRepository.js';
 import {mapMessage} from './mappers.js';
 
-export async function findAllMessages(): Promise<MessageEvent[]> {
+export type MessageVisibility = 'active' | 'excluded' | 'all';
+
+function visibilityWhereClause(visibility: MessageVisibility) {
+  if (visibility === 'excluded') return 'WHERE excluded_at IS NOT NULL';
+  if (visibility === 'all') return '';
+  return 'WHERE excluded_at IS NULL';
+}
+
+export async function findAllMessages(visibility: MessageVisibility = 'active'): Promise<MessageEvent[]> {
   const result = await pool.query(
     `SELECT messages.*,
             CASE WHEN EXISTS (SELECT 1 FROM ai_review_items WHERE ai_review_items.message_id = messages.id AND ai_review_items.status = 'pending') THEN 'pending'
                  WHEN EXISTS (SELECT 1 FROM ai_review_items WHERE ai_review_items.message_id = messages.id) THEN 'resolved'
+                 WHEN messages.raw_payload->>'reviewStatus' = 'pending' THEN 'pending'
                  ELSE 'none'
             END AS review_status,
-            EXISTS (SELECT 1 FROM ai_review_items WHERE ai_review_items.message_id = messages.id AND ai_review_items.status = 'pending') AS needs_human_review
+            (EXISTS (SELECT 1 FROM ai_review_items WHERE ai_review_items.message_id = messages.id AND ai_review_items.status = 'pending')
+              OR messages.raw_payload->>'reviewStatus' = 'pending') AS needs_human_review
      FROM messages
-     WHERE excluded_at IS NULL
+     ${visibilityWhereClause(visibility)}
      ORDER BY timestamp DESC, created_at DESC`,
   );
   return result.rows.map(mapMessage);
 }
 
-export async function findMessageById(messageId: string): Promise<MessageEvent | null> {
-  const result = await pool.query('SELECT * FROM messages WHERE id = $1 AND excluded_at IS NULL LIMIT 1', [messageId]);
+export async function findMessageById(messageId: string, options: {includeExcluded?: boolean} = {}): Promise<MessageEvent | null> {
+  const result = await pool.query(`SELECT * FROM messages WHERE id = $1 ${options.includeExcluded ? '' : 'AND excluded_at IS NULL'} LIMIT 1`, [messageId]);
   return result.rows[0] ? mapMessage(result.rows[0]) : null;
 }
 
@@ -150,35 +160,107 @@ export async function findReplyStatusHistoryByMessageId(messageId: string): Prom
   return result.rows.map(mapReplyStatusHistory);
 }
 
-export async function excludeMessage(messageId: string, reason: string) {
-  const message = await pool.query('UPDATE messages SET excluded_at = COALESCE(excluded_at, now()), excluded_reason = $2 WHERE id = $1 RETURNING *', [messageId, reason]);
+async function hideCaseIfNoActiveMessages(caseId: string | null, reason: string) {
+  if (!caseId) return null;
+
+  const activeMessages = await pool.query('SELECT COUNT(*)::int AS count FROM messages WHERE case_id = $1 AND excluded_at IS NULL', [caseId]);
+  if (Number(activeMessages.rows[0]?.count ?? 0) !== 0) return null;
+
+  const updatedCase = await pool.query(
+    `UPDATE cases
+     SET excluded_at = COALESCE(excluded_at, now()),
+         excluded_reason = $2,
+         exclusion_source = 'system_auto_case',
+         updated_at = now()
+     WHERE id = $1
+       AND (excluded_at IS NULL OR exclusion_source = 'system_auto_case')
+     RETURNING id`,
+    [caseId, reason],
+  );
+  return updatedCase.rows[0]?.id ? String(updatedCase.rows[0].id) : null;
+}
+
+async function excludeMessageWithSource(messageId: string, reason: string, source: ExclusionSource) {
+  const message = await pool.query(
+    `UPDATE messages
+     SET excluded_at = COALESCE(excluded_at, now()),
+         excluded_reason = $2,
+         exclusion_source = $3
+     WHERE id = $1
+     RETURNING *`,
+    [messageId, reason, source],
+  );
   if (!message.rows[0]) {
     return null;
   }
 
   const caseId = message.rows[0].case_id ? String(message.rows[0].case_id) : null;
-  let excludedCaseId: string | null = null;
-  let learnedRule = null;
+  const excludedCaseId = await hideCaseIfNoActiveMessages(caseId, reason);
 
-  if (message.rows[0].platform === 'Gmail') {
-    learnedRule = await upsertSenderEmailExclusionRule({
-      platform: 'Gmail',
-      senderEmail: String(message.rows[0].sender_id),
-      reason,
-      sourceMessageId: String(message.rows[0].id),
-    });
-  }
+  return {message: mapMessage(message.rows[0]), excludedCaseId, learnedRule: null};
+}
 
-  if (caseId) {
-    const activeMessages = await pool.query('SELECT COUNT(*)::int AS count FROM messages WHERE case_id = $1 AND excluded_at IS NULL', [caseId]);
-    if (Number(activeMessages.rows[0]?.count ?? 0) === 0) {
-      const updatedCase = await pool.query(
-        'UPDATE cases SET excluded_at = COALESCE(excluded_at, now()), excluded_reason = $2, updated_at = now() WHERE id = $1 RETURNING id',
-        [caseId, reason],
-      );
-      excludedCaseId = updatedCase.rows[0]?.id ? String(updatedCase.rows[0].id) : null;
+export async function excludeMessage(messageId: string, reason: string) {
+  return excludeMessageWithSource(messageId, reason, 'manual_message');
+}
+
+export async function excludeSenderForMessage(messageId: string, reason: string) {
+  const result = await excludeMessageWithSource(messageId, reason, 'sender_rule');
+  if (!result) return null;
+
+  const message = result.message;
+  const learnedRule = message.platform === 'Gmail'
+    ? await upsertSenderEmailExclusionRule({platform: 'Gmail', senderEmail: message.senderId, reason, sourceMessageId: message.id})
+    : null;
+
+  return {...result, learnedRule};
+}
+
+export async function restoreMessage(messageId: string) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const current = await client.query('SELECT * FROM messages WHERE id = $1 FOR UPDATE', [messageId]);
+    const row = current.rows[0];
+    if (!row) {
+      await client.query('ROLLBACK');
+      return null;
     }
-  }
 
-  return {message: mapMessage(message.rows[0]), excludedCaseId, learnedRule};
+    const messageResult = await client.query(
+      `UPDATE messages
+       SET excluded_at = NULL,
+           excluded_reason = NULL,
+           exclusion_source = NULL
+       WHERE id = $1
+       RETURNING *`,
+      [messageId],
+    );
+
+    let restoredCaseId: string | null = null;
+    const caseId = row.case_id ? String(row.case_id) : null;
+    if (caseId) {
+      const caseResult = await client.query(
+        `UPDATE cases
+         SET excluded_at = NULL,
+             excluded_reason = NULL,
+             exclusion_source = NULL,
+             updated_at = now()
+         WHERE id = $1
+           AND excluded_at IS NOT NULL
+           AND exclusion_source = 'system_auto_case'
+         RETURNING id`,
+        [caseId],
+      );
+      restoredCaseId = caseResult.rows[0]?.id ? String(caseResult.rows[0].id) : null;
+    }
+
+    await client.query('COMMIT');
+    return {message: mapMessage(messageResult.rows[0]), restoredCaseId};
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
