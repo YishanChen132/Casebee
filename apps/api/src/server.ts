@@ -10,7 +10,7 @@ import {excludeMessage, findAllMessages, findReplyStatusHistoryByMessageId, setR
 import {createRagExample, deactivateRagExample, findAllRagExamples} from './repositories/ragExamplesRepository.js';
 import {findReviewHistoryByMessageId, findReviewItemsByMessageId, resolveReviewItem} from './repositories/aiReviewRepository.js';
 import {enrichBusinessRisk, getBusinessRiskSummary} from './services/businessRiskService.js';
-import {screenRegistry} from './services/gcisBusinessRegistryProvider.js';
+import {getRegistryBackground, screenRegistry} from './services/gcisBusinessRegistryProvider.js';
 import {importDemoMessages} from './services/demoImportService.js';
 import {createGmailAuthUrl, getGmailStatus, handleGmailCallback, pollGmailMessages} from './services/gmailService.js';
 import {startGmailPollingScheduler} from './services/gmailPollingScheduler.js';
