@@ -1,7 +1,7 @@
-import {useEffect, useState} from 'react';
+import {useEffect, useRef, useState} from 'react';
 import {missingFieldDisplayLabels} from '@casebee/shared';
-import type {AiReviewDetail, AiReviewItem, BusinessProfile, BusinessRiskScore, CaseDetail, MessageEvent, MessageReplyStatusHistoryItem, Platform, ReplyStatus} from '@casebee/shared';
-import {enrichBusinessRisk, excludeMessage, getCaseDetail, getGmailAuthUrl, getGmailStatus, getMessageReplyStatusHistory, getMessageReview, getMessages, importMessage, pollGmail, reanalyzeMessage, resolveReview, updateMessageReplyStatus, type ImportPipelineResult} from '../services/api';
+import type {AiReviewDetail, AiReviewItem, BusinessProfile, BusinessRiskScore, CaseDetail, MessageEvent, MessageReplyStatusHistoryItem, Platform, RegistrySearchResult, ReplyStatus} from '@casebee/shared';
+import {enrichBusinessRisk, excludeMessage, getCaseDetail, getGmailAuthUrl, getGmailStatus, getMessageReplyStatusHistory, getMessageReview, getMessages, importMessage, pollGmail, reanalyzeMessage, resolveReview,screenRegistry,  updateMessageReplyStatus, type ImportPipelineResult} from '../services/api';
 import type {NavigateToPage} from '../App';
 
 const fieldLabels: Record<string, string> = {
@@ -76,6 +76,12 @@ const replyStatusLabels: Record<ReplyStatus | 'All', string> = {
   no_reply_needed: '不需回覆',
 };
 
+const registryStatusLabels: Record<RegistrySearchResult['status'], string> = {
+  found: '查得',
+  not_found: '未查得',
+  multiple: '多筆候選',
+};
+
 const gmailFilterRules = [
   '匯入：看起來像客戶詢價、合作、修改、交期或專案討論的信件',
   '略過：驗證碼、安全通知、Google 日曆邀請、noreply 系統通知',
@@ -125,6 +131,12 @@ export function MessagesPage({onNavigate, targetMessageId}: MessagesPageProps) {
   const [reviewDetail, setReviewDetail] = useState<AiReviewDetail | null>(null);
   const [reviewStatus, setReviewStatus] = useState('');
   const [manualReviewValues, setManualReviewValues] = useState<Record<string, string>>({});
+  const [registryTaxId, setRegistryTaxId] = useState('');
+  const [registryKeyword, setRegistryKeyword] = useState('');
+  const [registryResult, setRegistryResult] = useState<RegistrySearchResult | null>(null);
+  const [registryStatus, setRegistryStatus] = useState('');
+  const [isScreening, setIsScreening] = useState(false);
+  const registryRequestId = useRef(0);
 
   useEffect(() => {
     getMessages().then(setMessages).catch(() => setMessages([]));
@@ -292,6 +304,16 @@ const refreshAll = async () => {
     };
   }, [selectedMessage?.id, selectedTaxId, visibleExtraction?.clientName, selectedMessage?.senderName]);
 
+  useEffect(() => {
+    registryRequestId.current += 1;
+    setIsScreening(false);
+    setRegistryResult(null);
+    setRegistryStatus('');
+    setRegistryTaxId(selectedTaxId ?? '');
+    setRegistryKeyword(visibleExtraction?.clientName ?? selectedMessage?.senderName ?? '');
+  }, [selectedMessage?.id, selectedTaxId, visibleExtraction?.clientName, selectedMessage?.senderName]);
+
+
   const handleGmailSync = async () => {
     setIsSyncingGmail(true);
     setGmailAssistantStatus('正在同步 Gmail 並套用分類篩選...');
@@ -415,6 +437,39 @@ const refreshAll = async () => {
       setReplyStatusUpdateStatus(`已標記為${replyStatusLabels[replyStatus]}。`);
     } catch (error) {
       setReplyStatusUpdateStatus(error instanceof Error ? error.message : '回覆狀態更新失敗。');
+    }
+  };
+
+    const handleScreenRegistry = async () => {
+    const keyword = registryKeyword.trim();
+    const taxId = registryTaxId.trim();
+
+    if (!keyword && !taxId) {
+      setRegistryStatus('請輸入統一編號或公司名稱關鍵字。');
+      return;
+    }
+    if (!keyword && !/^\d{8}$/.test(taxId)) {
+      setRegistryStatus('統一編號需為 8 碼數字。');
+      return;
+    }
+
+    const requestId = ++registryRequestId.current;
+    setIsScreening(true);
+    setRegistryResult(null);
+    setRegistryStatus('查詢中...');
+
+    try {
+      const result = await screenRegistry({taxId: taxId || undefined, keyword: keyword || undefined});
+      if (requestId !== registryRequestId.current) return;
+      setRegistryResult(result);
+      setRegistryStatus('');
+    } catch (error) {
+      if (requestId !== registryRequestId.current) return;
+      setRegistryStatus(error instanceof Error ? error.message : '登記查詢失敗');
+    } finally {
+      if (requestId === registryRequestId.current) {
+        setIsScreening(false);
+      }
     }
   };
 
@@ -670,6 +725,40 @@ const refreshAll = async () => {
           ) : (
             <p>目前沒有訊息。</p>
           )}
+          <section className="business-risk-panel registry-screen-panel">
+                <div className="business-risk-panel__header">
+                  <h3>客戶真偽篩選</h3>
+                </div>
+                <p>收到不認識的合作邀請時，用統編或名稱查公司登記。登記資料只能證明這間公司存在，對方有沒有被授權，仍要用公司官方聯絡管道確認。目前只查登記狀態為「核准設立」的公司。</p>
+                <label>
+                  統一編號
+                  <input value={registryTaxId} onChange={(event) => setRegistryTaxId(event.target.value)} inputMode="numeric" maxLength={8} placeholder="8 碼，可留空" />
+                </label>
+                <label>
+                  公司名稱關鍵字
+                  <input value={registryKeyword} onChange={(event) => setRegistryKeyword(event.target.value)} placeholder="例如 品喬室內裝修設計" />
+                </label>
+                <button type="button" onClick={handleScreenRegistry} disabled={isScreening}>{isScreening ? '查詢中...' : '查詢登記資料'}</button>
+                {registryStatus ? <small>{registryStatus}</small> : null}
+                {registryResult ? (
+                  <div className="registry-screen-result">
+                    <strong>查詢結果：{registryStatusLabels[registryResult.status]}</strong>
+                    {registryResult.candidates.map((item) => (
+                      <article key={`${item.entityType}-${item.taxId ?? item.name}`} className="similar-card">
+                        <div className="similar-card__top">
+                          <strong>{item.name}</strong>
+                          <span>{item.entityType === 'company' ? '公司' : '商業'}</span>
+                        </div>
+                        <p>統編 {item.taxId ?? '未提供'}｜登記狀態 {item.statusDesc ?? '未提供'}</p>
+                        <p>{item.address ?? '地址未提供'}｜負責人 {item.responsibleName ?? '未提供'}</p>
+                      </article>
+                    ))}
+                    {registryResult.hint ? <p>{registryResult.hint}</p> : null}
+                    {registryResult.warnings.map((warning) => <small key={warning}>{warning}</small>)}
+                    <small>查詢時間 {new Date(registryResult.queriedAt).toLocaleString('zh-TW')}｜來源：經濟部商工行政資料開放平臺｜尚未確認為對方本人</small>
+                  </div>
+                ) : null}
+              </section>
           {selectedMessageIsGmail ? (
             <div className="message-exclusion-box">
               <div>
