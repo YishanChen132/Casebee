@@ -415,6 +415,27 @@ app.post('/api/business/screen', async (request, response) => {
   }
 });
 
+app.post('/api/business/background', async (request, response) => {
+  const payload = request.body as {taxId?: unknown};
+  const taxId = typeof payload.taxId === 'string' ? payload.taxId.trim() : '';
+
+  if (!/^\d{8}$/.test(taxId)) {
+    response.status(400).json({error: {message: 'taxId must be 8 digits'}});
+    return;
+  }
+
+  try {
+    const card = await getRegistryBackground(taxId);
+    if (!card) {
+      response.status(404).json({error: {message: 'Registry record not found'}});
+      return;
+    }
+    response.json({data: card});
+  } catch (error) {
+    response.status(500).json({error: {message: error instanceof Error ? error.message : 'Failed to load registry background'}});
+  }
+});
+
 app.get('/api/integrations/gmail/status', async (_request, response) => {
   try {
     response.json({data: await getGmailStatus()});
