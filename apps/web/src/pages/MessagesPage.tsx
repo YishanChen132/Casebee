@@ -139,6 +139,7 @@ export function MessagesPage({onNavigate, targetMessageId}: MessagesPageProps) {
   const [registryStatus, setRegistryStatus] = useState('');
   const [isScreening, setIsScreening] = useState(false);
   const registryRequestId = useRef(0);
+  const autoKeyword = useRef('');
   const [entityNames, setEntityNames] = useState<ExtractedEntityName[]>([]);
   const [backgroundCard, setBackgroundCard] = useState<RegistryBackgroundCard | null>(null);
   const [backgroundStatus, setBackgroundStatus] = useState('');
@@ -332,7 +333,7 @@ const refreshAll = async () => {
     return () => {
       cancelled = true;
     };
-  }, [selectedMessage?.id, selectedMessage?.threadId, selectedMessage?.text]);
+    }, [selectedMessage?.id, selectedMessage?.threadId, selectedMessage?.text, messages.length]);
 
     // 換訊息時，才清掉查詢卡
   useEffect(() => {
@@ -349,10 +350,24 @@ const refreshAll = async () => {
   }, [selectedMessage?.id]);
 
   // 帶入預設的統編與名稱：只在欄位還是空的時候才帶，不蓋掉使用者輸入的內容
+    // 帶入預設統編：只在欄位還是空的時候才帶
   useEffect(() => {
     setRegistryTaxId((current) => current || (selectedTaxId ?? ''));
-    setRegistryKeyword((current) => current || (visibleExtraction?.clientName ?? selectedMessage?.senderName ?? ''));
-  }, [selectedMessage?.id, selectedTaxId, visibleExtraction?.clientName, selectedMessage?.senderName]);
+  }, [selectedMessage?.id, selectedTaxId]);
+
+    // 帶入預設名稱：優先用 AI 找到的公司名稱，沒有才用客戶名稱。
+  // 只有欄位是空的、或還是上一次自動帶入的值時才換，不蓋掉使用者自己輸入的內容
+  useEffect(() => {
+    const preferred =
+      entityNames.find((item) => item.kind === 'company')?.name ??
+      entityNames[0]?.name ??
+      visibleExtraction?.clientName ??
+      selectedMessage?.senderName ??
+      '';
+    const previousAuto = autoKeyword.current;
+    autoKeyword.current = preferred;
+    setRegistryKeyword((current) => (current === '' || current === previousAuto ? preferred : current));
+  }, [entityNames, visibleExtraction?.clientName, selectedMessage?.senderName]);
 
 
   const handleGmailSync = async () => {
