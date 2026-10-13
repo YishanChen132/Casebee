@@ -428,3 +428,25 @@ export interface RegistrySearchResult {
   hint: string | null;
   warnings: string[];
 }
+
+export interface RegistryBusinessItem {
+  code: string;
+  description: string;
+}
+
+export interface RegistryBackgroundCard {
+  taxId: string;
+  registeredName: string;
+  entityType: 'company';
+  statusDesc: string | null;
+  address: string | null;
+  capitalAmount: number | null;
+  setupDate: string | null;
+  responsibleName: string | null;
+  businessItems: RegistryBusinessItem[];
+  businessItemsStatus: 'available' | 'unavailable';
+  queriedAt: string;
+  source: 'gcis';
+  verificationStatus: 'unconfirmed';
+  warnings: string[];
+}

@@ -1,4 +1,4 @@
-import type {BusinessProfile, RegistryCandidate, RegistryLookupStatus, RegistrySearchResult} from '@casebee/shared';
+import type {BusinessProfile, RegistryBackgroundCard, RegistryBusinessItem, RegistryCandidate, RegistryLookupStatus, RegistrySearchResult} from '@casebee/shared';
 
 type GcisCompanyRecord = {
   Business_Accounting_NO?: string;
@@ -244,4 +244,76 @@ export async function screenRegistry(input: {taxId?: string; keyword?: string}):
   }
 
   return {status, candidates, query: {taxId, keyword}, queriedAt: new Date().toISOString(), source: 'gcis', hint, warnings};
+}
+
+// ===== 合作對象背景卡 =====
+
+const defaultCompanyBusinessItemsEndpoint = 'https://data.gcis.nat.gov.tw/od/data/api/236EE382-4942-41A9-BD03-CA0709025E7C';
+
+async function fetchCompanyBusinessItems(taxId: string): Promise<RegistryBusinessItem[]> {
+  const endpoint = process.env.GCIS_COMPANY_BUSINESS_ITEMS_ENDPOINT ?? defaultCompanyBusinessItemsEndpoint;
+  const records = await fetchGcisList(endpoint, `Business_Accounting_NO eq ${taxId}`, 1);
+  const raw = records[0]?.Cmp_Business;
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  return raw
+    .map((item) => {
+      const record = item as LooseRecord;
+      const code = pickText(record, ['Business_Item']);
+      const description = pickText(record, ['Business_Item_Desc']);
+      return code && description ? {code, description} : null;
+    })
+    .filter((item): item is RegistryBusinessItem => item !== null);
+}
+
+export async function getRegistryBackground(taxId: string): Promise<RegistryBackgroundCard | null> {
+  if (!/^\d{8}$/.test(taxId)) {
+    return null;
+  }
+
+  // 基本資料與營業項目同時查；營業項目失敗時，基本資料照樣回傳
+  const [profileResult, itemsResult] = await Promise.allSettled([
+    findGcisBusinessProfile({taxId}),
+    fetchCompanyBusinessItems(taxId),
+  ]);
+
+  if (profileResult.status === 'rejected') {
+    throw profileResult.reason;
+  }
+
+  const profile = profileResult.value;
+  if (!profile) {
+    return null;
+  }
+
+  const warnings: string[] = [];
+  let businessItems: RegistryBusinessItem[] = [];
+  let businessItemsStatus: RegistryBackgroundCard['businessItemsStatus'] = 'available';
+
+  if (itemsResult.status === 'fulfilled') {
+    businessItems = itemsResult.value;
+  } else {
+    console.error('[GCIS] business items lookup failed:', itemsResult.reason);
+    businessItemsStatus = 'unavailable';
+    warnings.push('營業項目暫時無法查詢，其他欄位不受影響。');
+  }
+
+  return {
+    taxId: profile.businessAccountingNo ?? taxId,
+    registeredName: profile.businessName,
+    entityType: 'company',
+    statusDesc: profile.statusDesc,
+    address: profile.registeredAddress,
+    capitalAmount: profile.capitalAmount,
+    setupDate: profile.setupDate,
+    responsibleName: profile.responsibleName,
+    businessItems,
+    businessItemsStatus,
+    queriedAt: new Date().toISOString(),
+    source: 'gcis',
+    verificationStatus: 'unconfirmed',
+    warnings,
+  };
 }
