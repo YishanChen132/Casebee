@@ -589,7 +589,7 @@ const refreshAll = async () => {
           <button type="button" className={reviewOnly ? 'messages-filter-tabs__button messages-filter-tabs__button--active' : 'messages-filter-tabs__button'} onClick={() => setReviewOnly((current) => !current)}>
             待人工確認 {messages.filter((message) => message.reviewStatus === 'pending').length}
           </button>
-          <select value={replyStatusFilter} onChange={(event) => setReplyStatusFilter(event.target.value as ReplyStatus | 'All')}>
+          <select className="messages-reply-filter" value={replyStatusFilter} onChange={(event) => setReplyStatusFilter(event.target.value as ReplyStatus | 'All')}>
             {replyStatusFilters.map((status) => <option key={status} value={status}>{replyStatusLabels[status]}</option>)}
           </select>
 
