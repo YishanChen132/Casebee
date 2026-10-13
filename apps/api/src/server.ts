@@ -10,9 +10,12 @@ import {excludeMessage, findAllMessages, findReplyStatusHistoryByMessageId, setR
 import {createRagExample, deactivateRagExample, findAllRagExamples} from './repositories/ragExamplesRepository.js';
 import {findReviewHistoryByMessageId, findReviewItemsByMessageId, resolveReviewItem} from './repositories/aiReviewRepository.js';
 import {enrichBusinessRisk, getBusinessRiskSummary} from './services/businessRiskService.js';
+import {getRegistryBackground, screenRegistry} from './services/gcisBusinessRegistryProvider.js';
+import {extractEntityNames} from './services/entityNameExtractor.js';
 import {importDemoMessages} from './services/demoImportService.js';
 import {createGmailAuthUrl, getGmailStatus, handleGmailCallback, pollGmailMessages} from './services/gmailService.js';
 import {startGmailPollingScheduler} from './services/gmailPollingScheduler.js';
+import {handleLineWebhookEvents, verifyLineSignature} from './services/lineService.js';
 import {importMessage} from './services/messageImportService.js';
 import {reanalyzeMessage} from './services/messageReanalysisService.js';
 import {getRuleScheduleStatus, runReplyOverdueRules} from './services/ruleEngine.js';
@@ -39,7 +42,11 @@ function isCreateRagExampleInput(payload: Partial<CreateRagExampleInput>): paylo
 }
 
 app.use(cors({origin: process.env.FRONTEND_URL ?? 'http://localhost:5173'}));
-app.use(express.json());
+app.use(express.json({
+  verify: (request, _response, buffer) => {
+    (request as express.Request & {rawBody?: Buffer}).rawBody = Buffer.from(buffer);
+  },
+}));
 
 app.get('/api/health', async (_request, response) => {
   try {
@@ -284,7 +291,21 @@ app.post('/api/messages/import', async (request, response) => {
 });
 
 app.post('/api/webhooks/line', (request, response) => {
-  response.json({ok: true, receivedEvents: Array.isArray(request.body?.events) ? request.body.events.length : 0});
+  const rawBody = (request as express.Request & {rawBody?: Buffer}).rawBody ?? Buffer.from(JSON.stringify(request.body ?? {}));
+  const signature = request.header('x-line-signature');
+
+  if (!verifyLineSignature(rawBody, signature)) {
+    response.status(401).json({error: {message: 'Invalid LINE signature'}});
+    return;
+  }
+
+  const events = Array.isArray(request.body?.events) ? request.body.events : [];
+  // Respond immediately so LINE does not retry/time out; process events in the background.
+  response.json({ok: true, receivedEvents: events.length});
+
+  handleLineWebhookEvents(events).catch((error) => {
+    console.error('Failed to process LINE webhook events', error);
+  });
 });
 
 app.post('/api/demo/import', async (_request, response) => {
@@ -370,6 +391,55 @@ app.post('/api/business/enrich', async (request, response) => {
     });
   } catch (error) {
     response.status(500).json({error: {message: error instanceof Error ? error.message : 'Failed to enrich business risk'}});
+  }
+});
+
+app.post('/api/business/screen', async (request, response) => {
+  const payload = request.body as {taxId?: unknown; keyword?: unknown};
+  const taxId = typeof payload.taxId === 'string' ? payload.taxId.trim() : '';
+  const keyword = typeof payload.keyword === 'string' ? payload.keyword.trim() : '';
+
+  if (!taxId && !keyword) {
+    response.status(400).json({error: {message: 'taxId or keyword is required'}});
+    return;
+  }
+
+  if (taxId && !keyword && !/^\d{8}$/.test(taxId)) {
+    response.status(400).json({error: {message: 'taxId must be 8 digits'}});
+    return;
+  }
+
+  try {
+    response.json({data: await screenRegistry({taxId: taxId || undefined, keyword: keyword || undefined})});
+  } catch (error) {
+    response.status(500).json({error: {message: error instanceof Error ? error.message : 'Failed to screen registry'}});
+  }
+});
+
+app.post('/api/business/extract-names', (request, response) => {
+  const payload = request.body as {text?: unknown};
+  const text = typeof payload.text === 'string' ? payload.text.slice(0, 5000) : '';
+  response.json({data: {names: extractEntityNames(text)}});
+});
+
+app.post('/api/business/background', async (request, response) => {
+  const payload = request.body as {taxId?: unknown};
+  const taxId = typeof payload.taxId === 'string' ? payload.taxId.trim() : '';
+
+  if (!/^\d{8}$/.test(taxId)) {
+    response.status(400).json({error: {message: 'taxId must be 8 digits'}});
+    return;
+  }
+
+  try {
+    const card = await getRegistryBackground(taxId);
+    if (!card) {
+      response.status(404).json({error: {message: 'Registry record not found'}});
+      return;
+    }
+    response.json({data: card});
+  } catch (error) {
+    response.status(500).json({error: {message: error instanceof Error ? error.message : 'Failed to load registry background'}});
   }
 });
 

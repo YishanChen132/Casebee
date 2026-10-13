@@ -82,6 +82,10 @@ export async function findOpenAlertByCaseAndType(caseId: string, type: Alert['ty
   return result.rows[0] ? mapAlert(result.rows[0]) : null;
 }
 
+export async function resolveOpenAlertsByCaseAndType(caseId: string, type: Alert['type']): Promise<void> {
+  await pool.query('UPDATE alerts SET resolved_at = COALESCE(resolved_at, now()) WHERE case_id = $1 AND type = $2 AND resolved_at IS NULL', [caseId, type]);
+}
+
 export async function resolveAlert(alertId: string): Promise<Alert | null> {
   const result = await pool.query(
     `UPDATE alerts
