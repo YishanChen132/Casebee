@@ -1,0 +1,90 @@
+[
+  {
+    "id": "E01",
+    "title": "新合作邀約建立案件",
+    "gmailMessageId": "mock-e01-business-invite",
+    "threadId": "mock-thread-e01",
+    "from": "brand@example.test",
+    "subject": "品牌合作邀約",
+    "bodyType": "text/plain",
+    "body": "您好，我們想邀請您合作拍攝一支品牌宣傳短片，請提供報價與可配合時程。",
+    "expected": {"bucket": "CASE_RELATED", "createsCase": true, "skipped": false}
+  },
+  {
+    "id": "E02",
+    "title": "非商業通知自動略過",
+    "gmailMessageId": "mock-e02-security-code",
+    "threadId": "mock-thread-e02",
+    "from": "no-reply@example.test",
+    "subject": "Your verification code",
+    "bodyType": "text/plain",
+    "body": "Your verification code is 123456.",
+    "expected": {"bucket": "NON_CASE", "createsCase": false, "skipped": true}
+  },
+  {
+    "id": "E03",
+    "title": "被略過郵件重新匯入",
+    "gmailMessageId": "mock-e03-reimport-skipped",
+    "threadId": "mock-thread-e03",
+    "from": "newsletter@example.test",
+    "subject": "活動公告",
+    "bodyType": "text/plain",
+    "body": "這是一封活動公告，使用者可從 skipped Gmail 清單受控重新匯入，但不應直接建立商業案件。",
+    "expected": {"bucket": "NON_CASE", "createsCase": false, "restoresMessage": true}
+  },
+  {
+    "id": "E04",
+    "title": "同寄件者不同類型信件",
+    "gmailMessageId": "mock-e04-same-sender-business",
+    "threadId": "mock-thread-e04",
+    "from": "same-sender@example.test",
+    "subject": "網站設計報價",
+    "bodyType": "text/plain",
+    "body": "請協助估價網站重新設計，預算約 120000，希望 11 月完成。",
+    "expected": {"bucket": "CASE_RELATED", "createsCase": true, "senderRuleMustNotBlockOverride": true}
+  },
+  {
+    "id": "E05",
+    "title": "同 Thread 欄位修改與 Merge",
+    "gmailMessageId": "mock-e05-thread-change",
+    "threadId": "mock-thread-e05",
+    "from": "client@example.test",
+    "subject": "Re: Logo 設計報價",
+    "bodyType": "text/plain",
+    "body": "補充一下，交期改成 9/18，預算維持 20000。",
+    "expected": {"bucket": "UNCERTAIN", "existingThreadKeepsCasePipeline": true}
+  },
+  {
+    "id": "E06",
+    "title": "HTML 郵件正規化與摘要",
+    "gmailMessageId": "mock-e06-html-body",
+    "threadId": "mock-thread-e06",
+    "from": "html-client@example.test",
+    "subject": "包裝設計詢價",
+    "bodyType": "text/html",
+    "body": "<html><body><pre>您好<br><b>想詢問包裝設計報價</b><br>預算 30000</pre></body></html>",
+    "expected": {"bucket": "CASE_RELATED", "createsCase": true, "visibleHtmlTags": false}
+  },
+  {
+    "id": "E07",
+    "title": "Gmail API 錯誤與授權失效",
+    "gmailMessageId": "mock-e07-api-error",
+    "threadId": "mock-thread-e07",
+    "from": "error@example.test",
+    "subject": "API failure fixture",
+    "bodyType": "mock-error",
+    "body": "MOCK_GMAIL_API_ERROR",
+    "expected": {"recordsLastError": true, "dataLoss": false}
+  },
+  {
+    "id": "E08",
+    "title": "重複 Poll / Re-import 冪等性",
+    "gmailMessageId": "mock-e08-idempotency",
+    "threadId": "mock-thread-e08",
+    "from": "repeat@example.test",
+    "subject": "品牌攝影詢價",
+    "bodyType": "text/plain",
+    "body": "想詢問品牌攝影報價，請提供費用與時程。",
+    "expected": {"createsDuplicateMessage": false, "createsDuplicateCase": false}
+  }
+]
