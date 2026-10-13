@@ -11,7 +11,7 @@
     "category": "collaboration_invite",
     "senderName": "LumiNote",
     "text": "Subject: 合作邀請\n\n我們想邀請你合作拍一支生活感的筆記 App 宣傳影片，9/15 前上線，會需要 IG 限動轉發。",
-    "expected": {"clientName": "LumiNote", "projectItem": "Reels 影片", "quoteAmount": null, "expectedDeadline": "9/15", "publishDeadline": "9/15", "intent": "合作邀請", "missingFields": ["quote_amount", "usage_rights", "revision_scope", "deliverables"]}
+    "expected": {"clientName": "LumiNote", "projectItem": "影片", "quoteAmount": null, "expectedDeadline": "9/15", "publishDeadline": "9/15", "intent": "合作邀請", "missingFields": ["quote_amount", "usage_rights", "revision_scope", "deliverables"]}
   },
   {
     "id": "gmail-quote-website-003",
@@ -74,7 +74,7 @@
     "category": "cancellation",
     "senderName": "米平方設計",
     "text": "不好意思，這次 Banner 設計因為內部預算取消，先暫停合作，謝謝你之前提供的報價。",
-    "expected": {"clientName": "米平方設計", "projectItem": "Banner", "quoteAmount": null, "expectedDeadline": null, "intent": "取消合作", "missingFields": []}
+    "expected": {"clientName": "米平方設計", "projectItem": "Banner", "quoteAmount": null, "expectedDeadline": null, "intent": "取消合作", "caseStatus": "已流失", "missingFields": []}
   },
   {
     "id": "gmail-follow-up-budget-012",
@@ -207,6 +207,6 @@
     "category": "next_action",
     "senderName": "遠嶼科技",
     "text": "官網設計已完成，尾款也收到，謝謝。",
-    "expected": {"clientName": "遠嶼科技", "projectItem": "官網設計", "quoteAmount": null, "expectedDeadline": null, "submissionDeadline": null, "publishDeadline": null, "nextAction": null, "requiredMaterials": [], "intent": "一般訊息", "missingFields": ["quote_amount", "expected_deadline"]}
+    "expected": {"clientName": "遠嶼科技", "projectItem": "官網設計", "quoteAmount": null, "expectedDeadline": null, "submissionDeadline": null, "publishDeadline": null, "nextAction": null, "requiredMaterials": [], "intent": "完成結案", "caseStatus": "已完成", "missingFields": []}
   }
 ]

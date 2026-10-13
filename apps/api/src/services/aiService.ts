@@ -11,6 +11,10 @@ const extractionSystemPrompt = `You extract structured case-management data from
 Return only valid JSON with these keys:
 clientName, projectItem, quoteAmount, expectedDeadline, submissionDeadline, publishDeadline, nextAction, nextActionSource, requiredMaterials, providedMaterials, intent, caseStatus, missingFields, summary, suggestedReply.
 Use Traditional Chinese for summary and suggestedReply.
+Perform the weak-field decisions explicitly in this order without adding extra model calls:
+1. intent: identify the main semantic event of this message, not just keyword presence.
+2. nextAction: decide who must do what now, and omit stale or merely informational actions.
+3. missingFields: list only information still required for the current case state after known facts are applied.
 Prefer the company/brand name for clientName, not a sentence such as "我是某某團隊".
 Extract quoteAmount only when a real budget/fee/quote amount is mentioned; do not treat years or dates as amounts.
 Extract expectedDeadline as the next closest key deadline. Use submissionDeadline for draft/script/material/final delivery to client. Use publishDeadline for public launch/posting/release/campaign dates. Do not infer typed deadlines when the text only says a generic completion date.
@@ -114,10 +118,10 @@ async function extractWithGemini(input: {senderName: string; text: string}, fall
   return normalizeExtraction(parseJsonObject(payload.candidates?.[0]?.content?.parts?.[0]?.text ?? ''), fallback);
 }
 
-export async function analyzeMessage(input: {senderName: string; text: string; receivedAt?: string}) {
+export async function analyzeMessage(input: {senderName: string; text: string; receivedAt?: string; ragEnabled?: boolean}) {
   const prepared = preprocessEmail(input.text);
   const classification = classifyPreparedMessage(prepared);
-  const similarCases = await findSimilarCasesForText(prepared.cleanText);
+  const similarCases = input.ragEnabled === false ? [] : await findSimilarCasesForText(prepared.cleanText);
   const fallback = extractWithRules({...input, prepared, classification, similarCases, receivedAt: input.receivedAt});
   const fallbackValidation = validateExtraction({extraction: fallback, prepared, classification, similarCases});
   const provider = (process.env.AI_PROVIDER ?? 'rule').toLowerCase();
@@ -126,9 +130,9 @@ export async function analyzeMessage(input: {senderName: string; text: string; r
     try {
       const extraction = await extractWithOpenAi({senderName: input.senderName, text: prepared.cleanText}, fallback);
       const validation = validateExtraction({extraction, prepared, classification, similarCases});
-      return {extraction, modelName: `${process.env.OPENAI_MODEL ?? 'gpt-4o-mini'} (confidence ${validation.confidence})`, validation};
+      return {extraction, modelName: `${process.env.OPENAI_MODEL ?? 'gpt-4o-mini'} (confidence ${validation.confidence})`, validation, similarCases};
     } catch (error) {
-      return {extraction: fallback, modelName: `rule-rag-fallback confidence ${fallbackValidation.confidence} (openai fallback: ${error instanceof Error ? error.message : 'unknown error'})`, validation: fallbackValidation};
+      return {extraction: fallback, modelName: `rule-rag-fallback confidence ${fallbackValidation.confidence} (openai fallback: ${error instanceof Error ? error.message : 'unknown error'})`, validation: fallbackValidation, similarCases};
     }
   }
 
@@ -136,11 +140,11 @@ export async function analyzeMessage(input: {senderName: string; text: string; r
     try {
       const extraction = await extractWithGemini({senderName: input.senderName, text: prepared.cleanText}, fallback);
       const validation = validateExtraction({extraction, prepared, classification, similarCases});
-      return {extraction, modelName: `${process.env.GEMINI_MODEL ?? 'gemini-1.5-flash'} (confidence ${validation.confidence})`, validation};
+      return {extraction, modelName: `${process.env.GEMINI_MODEL ?? 'gemini-1.5-flash'} (confidence ${validation.confidence})`, validation, similarCases};
     } catch (error) {
-      return {extraction: fallback, modelName: `rule-rag-fallback confidence ${fallbackValidation.confidence} (gemini fallback: ${error instanceof Error ? error.message : 'unknown error'})`, validation: fallbackValidation};
+      return {extraction: fallback, modelName: `rule-rag-fallback confidence ${fallbackValidation.confidence} (gemini fallback: ${error instanceof Error ? error.message : 'unknown error'})`, validation: fallbackValidation, similarCases};
     }
   }
 
-  return {extraction: fallback, modelName: `rule-rag-fallback confidence ${fallbackValidation.confidence}`, validation: fallbackValidation};
+  return {extraction: fallback, modelName: `rule-rag-fallback confidence ${fallbackValidation.confidence}`, validation: fallbackValidation, similarCases};
 }

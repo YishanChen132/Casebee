@@ -13,19 +13,19 @@ import {computeStageAwareMissingFields} from './missingFieldService.js';
 function caseSafeExtraction(extraction: AiExtraction, existingCase: CaseRecord | null, threadContext: ThreadAwareExtractionResult) {
   if (!existingCase) return extraction;
   const safe = {...extraction, missingFields: [...extraction.missingFields]};
-  if ('projectItem' in threadContext.changedFields || threadContext.conflictingFields.some((conflict) => conflict.field === 'projectItem')) {
+  if (threadContext.conflictingFields.some((conflict) => conflict.field === 'projectItem')) {
     safe.projectItem = existingCase.projectItem === '待釐清需求' ? null : existingCase.projectItem;
   }
-  if ('quoteAmount' in threadContext.changedFields || threadContext.conflictingFields.some((conflict) => conflict.field === 'quoteAmount')) {
+  if (threadContext.conflictingFields.some((conflict) => conflict.field === 'quoteAmount')) {
     safe.quoteAmount = existingCase.quoteAmount;
   }
-  if ('expectedDeadline' in threadContext.changedFields || threadContext.conflictingFields.some((conflict) => conflict.field === 'expectedDeadline')) {
+  if (threadContext.conflictingFields.some((conflict) => conflict.field === 'expectedDeadline')) {
     safe.expectedDeadline = existingCase.expectedDeadline;
   }
-  if ('submissionDeadline' in threadContext.changedFields || threadContext.conflictingFields.some((conflict) => conflict.field === 'submissionDeadline')) {
+  if (threadContext.conflictingFields.some((conflict) => conflict.field === 'submissionDeadline')) {
     safe.submissionDeadline = existingCase.submissionDeadline;
   }
-  if ('publishDeadline' in threadContext.changedFields || threadContext.conflictingFields.some((conflict) => conflict.field === 'publishDeadline')) {
+  if (threadContext.conflictingFields.some((conflict) => conflict.field === 'publishDeadline')) {
     safe.publishDeadline = existingCase.publishDeadline;
   }
   return safe;
@@ -80,7 +80,7 @@ export async function importMessage(input: {platform: Platform; senderId?: strin
       severity: 'warning',
     }));
   }
-  const reviewFields = new Set([...Object.keys(threadContext.changedFields), ...threadContext.conflictingFields.map((field) => field.field)]);
+  const reviewFields = new Set(threadContext.conflictingFields.map((field) => field.field));
   const reviewItems = await createReviewItems(Array.from(reviewFields).map((field) => {
     const conflict = threadContext.conflictingFields.find((item) => item.field === field);
     return {

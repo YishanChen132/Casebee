@@ -38,7 +38,8 @@ function includesAny(text: string, keywords: string[]) {
 }
 
 function buildContext(caseRecord: CaseRecord, extraction: AiExtraction) {
-  return [caseRecord.title, caseRecord.summary, extraction.intent, extraction.summary, extraction.projectItem ?? '', extraction.expectedDeadline ?? ''].join(' ');
+  const stripSimilarCaseText = (text: string | null | undefined) => (text ?? '').replace(/相似案例：[^；。]*[；。]?/g, '');
+  return [caseRecord.title, stripSimilarCaseText(caseRecord.summary), extraction.intent, stripSimilarCaseText(extraction.summary), extraction.projectItem ?? '', extraction.expectedDeadline ?? ''].join(' ');
 }
 
 export async function runRules(caseRecord: CaseRecord, extraction: AiExtraction): Promise<Alert[]> {

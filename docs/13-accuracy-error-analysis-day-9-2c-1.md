@@ -233,3 +233,223 @@ Remaining issues were not converted into fixture expectations because they refle
 - `requiredMaterials` still overmatches `產品` or `品牌 Logo` when the text describes a project type or deliverable rather than pending client material.
 - RAG can still over-specialize project items, such as `影片` becoming `Reels 影片`.
 - `thread-one-of-two-deadlines-conflict` still reports `expectedDeadline` as changed/conflicting when only `publishDeadline` changed; under the compatibility rule, `expectedDeadline` should remain tied to `submissionDeadline` when both typed deadlines exist.
+
+## Day 9-2C-3 Search/RAG vs Extraction Diagnosis
+
+Scope: diagnosis and evaluator instrumentation. Hybrid Search was not changed.
+
+Question: weak post-search field mapping should be attributed to search architecture, RAG, thread context, or extraction/schema rules.
+
+Evaluator changes:
+
+- `analyzeMessage` and `analyzeThreadAwareMessage` now accept optional `ragEnabled`; default behavior remains RAG-enabled.
+- Thread accuracy now reports four modes:
+- `currentOnlyRagOff`: current message only, no RAG.
+- `currentOnlyRagOn`: current message only, with RAG.
+- `threadContextRagOff`: existing case/thread inheritance, no RAG.
+- `threadContextRagOn`: existing case/thread inheritance, with RAG.
+
+Current Day 9 accuracy findings:
+
+- Development RAG-on `fullOverall`: `0.898`.
+- Development RAG-on weakest fields: `nextAction` exact `0.64`, `missingFields` exact set `0.72`, `intent` `0.84`, `submissionDeadline` `0.88`.
+- Top error causes: `nextAction` false positives, missingFields exact-set mismatches, typed deadline classification, material overmatch.
+- RAG on/off for development improves full overall by only `+0.016`; it improves `missingFields` by `+0.20` but slightly hurts `projectItem` by `-0.04`.
+- Holdout RAG on/off improves full overall by `+0.073`, mostly through `projectItem` and `missingFields`.
+
+Thread A/B/C/D results:
+
+| Mode | Full Overall | Legacy Core | Extended | Interpretation |
+| --- | ---: | ---: | ---: | --- |
+| currentOnlyRagOff | 0.578 | 0.480 | 0.750 | Current message alone lacks inherited case fields. |
+| currentOnlyRagOn | 0.600 | 0.480 | 0.750 | RAG helps current-only only slightly. |
+| threadContextRagOff | 0.938 | 1.000 | 1.000 | Thread/existing-case context solves most field mapping gaps. |
+| threadContextRagOn | 0.954 | 1.000 | 1.000 | RAG adds only a small thread-level improvement. |
+
+Delta interpretation:
+
+- Current-only RAG gain: `+0.022` overall, mainly `projectItem +0.20`.
+- Thread context gain over current-only RAG: `+0.354` overall, with major gains in `projectItem +0.80`, `quoteAmount +0.80`, `expectedDeadline +1.00`, `submissionDeadline +0.40`, `publishDeadline +0.40`, and `nextAction +0.20`.
+- Thread-context RAG gain: `+0.016` overall, mainly inherited-field bookkeeping, not core scalar extraction.
+
+Diagnosis:
+
+- This is not primarily a Hybrid Search problem yet. Search/RAG retrieval can help, but the biggest observed gap is that current-message extraction cannot reconstruct existing case state without thread/existing-case context.
+- RAG improves some missing-field and project-item cases, but also introduces project-item over-specificity and can add `required_materials` through typical missing fields.
+- The weak mapping after search is mainly an extraction/schema/thread-context problem: when context exists, the system needs stricter rules for which fields may be inherited, changed, conflicted, or ignored.
+- Hybrid Search should be revisited only after extraction/schema/thread mapping is tightened and after a test shows that the needed context exists but retrieval fails to find it.
+
+Recommended next order:
+
+1. Tighten `nextAction` extraction/inference rules to reduce false positives.
+2. Tighten typed deadline rules for explicit first-version/submission phrases and compatibility handling when only `publishDeadline` changes.
+3. Tighten `requiredMaterials` so project types and provided assets do not become pending materials.
+4. Update thread context mapping so `expectedDeadline` compatibility does not create false changed/conflicting fields when submission remains the controlling deadline.
+5. Then evaluate RAG retrieval quality with targeted fixtures where the correct context exists only in historical examples.
+6. Only after step 5 should Hybrid Search or embedding/vector retrieval be changed.
+
+## P0-P3 Field Mapping Roadmap
+
+Current priority order:
+
+- P0 Existing Case Field Merge: handle inherit, update, conflict, clear, and field source tracking for same-thread/existing-case updates.
+- P1 Extraction Schema and Typed Field Rules: tighten deadline, next action, required materials, and status transition semantics.
+- P2 RAG Guardrails: RAG may provide supporting evidence, but must not create current-case facts by similarity alone.
+- P3 Hybrid Search Optimization: freeze main search architecture until P0-P2 stabilize, then evaluate cross-thread/cross-case linking separately.
+
+P0 merge contract implemented:
+
+- Inherit: if current message omits a field and existing case has it, keep existing value and mark source `inherited`.
+- Update: if existing case lacks a field and current message provides it, apply it and mark source `changed`; this does not require human review by itself.
+- Conflict: if both existing and current values exist and differ for critical fields, keep existing case value, mark source `conflict`, create review context, and require human review.
+- Clear: terminal/current completion or cancellation semantics may clear action/material fields and mark source `cleared`.
+- Source tracking: thread analysis now returns `fieldSources` and `clearedFields`, and `ai_extractions` persists `field_sources` and `cleared_fields` JSONB.
+- Compatibility: when both submission and publish deadlines exist, a publish-only change no longer forces `expectedDeadline` to be treated as an independent conflict; `expectedDeadline` remains controlled by `submissionDeadline`.
+
+P0 validation result:
+
+- Thread `threadContextRagOn` full overall improved from `0.954` to `1.000` after applying the merge contract and expanding thread fixtures.
+- P0 thread validation now covers 6 fixtures and 90 scored fields, including `fieldSources` and `clearedFields` metadata.
+- `needsHumanReviewCount` now reflects true conflicts, not safe missing-field updates.
+
+## P1 Typed Field Rules Result
+
+Implemented first P1 slice:
+
+- `caseStatus` is now optionally scored in extraction accuracy fixtures.
+- Completion/closure language maps to `intent: 完成結案`, `caseStatus: 已完成`, no next action, and no missing fields.
+- Cancellation fixtures now explicitly score `caseStatus: 已流失`.
+- Submission deadline detection handles `第一版`, `交第一版`, and deadline-context `交` wording.
+- Required material extraction avoids treating generic project descriptions like `需要產品攝影` as a pending material named `產品`.
+- Next-action rules treat `估價` as quote work and avoid draft-preparation next actions for deadline-risk messages.
+
+Validation result:
+
+- Development ragOff full overall improved to `0.902`.
+- Development ragOff extended overall improved to `0.920`.
+- Development ragOff `submissionDeadline`, `publishDeadline`, `requiredMaterials`, and `caseStatus` are each `1.000` on the current fixture set.
+- Thread context RAG-on remains `1.000`.
+
+## P2 RAG Guardrails Result
+
+Implemented RAG guardrail contract:
+
+- RAG may support reply wording, quote range context, success-pattern guidance, and similar-case display.
+- RAG must not create current-case facts such as `projectItem`, deadlines, quote amount, required materials, or missing fields.
+- Current-case facts now come from current-message deterministic extraction and same-thread/existing-case merge only.
+- Recurring schema requirements, such as collaboration deliverables/usage/revision clarification and website scope/contract clarification, are deterministic rules rather than `typicalMissingFields` copied from similar cases.
+
+Validation result:
+
+- Development and holdout RAG before/after fact-field delta is `0`.
+- Thread current-only RAG before/after fact-field delta is `0`.
+- Thread context RAG-on remains `1.000`.
+- Development ragOff full overall is `0.918`; extended overall remains `0.920`.
+
+## P3 Hybrid Search Result
+
+Decision:
+
+- Freeze the main Hybrid Search architecture for now.
+- Current search remains deterministic: project/alias match, phrase group match, token overlap, case type compatibility, and quote-amount proximity.
+- Do not add embeddings/vector search yet because P0-P2 removed RAG as a source of case facts and the measured RAG fact-field delta is now `0`.
+
+Implemented P3 diagnostic improvement:
+
+- RAG search results now include optional `scoreBreakdown` metadata showing why an example ranked: e.g. `projectExact`, `alias`, `mediaPhrase`, `websitePhrase`, `phraseGroup`, `tokenOverlap`, `caseType`, `amountProximity`.
+- Smoke now asserts score breakdown is exposed for similar-case retrieval.
+
+Current P3 status:
+
+- Hybrid Search is useful for reply/supporting context, not authoritative fact extraction.
+- Cross-thread/cross-case linking remains intentionally deferred until a targeted fixture proves retrieval failure is the bottleneck.
+- P3 is complete as a freeze-and-diagnose step, not as a vector-search rewrite.
+
+## P4 Preflight Checklist
+
+Completed before starting P4 implementation:
+
+- P0-P3 commit baseline preserved at `b5848ed Add hybrid search diagnostics`.
+- Latest P0-P3 accuracy output preserved at `tool_12f53cefc0014pZio2a2VSmy4M`.
+- Existing classification entry points confirmed:
+  - `messageClassifier.ts`: used by extraction accuracy and `analyzeMessage`.
+  - `gmailService.ts`: Gmail import triage for verification codes, calendar invites, no-reply/automated mail, newsletters, and announcements.
+- Current non-case main fixtures cover calendar invite, newsletter, system notification, announcement, and security-code holdout.
+- Latest residual extraction errors are not classification-driven. Main error concentration is `nextAction`, `missingFields`, then `intent`.
+- Added independent P4 classification fixture set and script:
+  - Fixture: `apps/api/src/fixtures/classification/p4-classification-fixtures.json`.
+  - Script: `npm run classification:p4 --workspace @casebee/api`.
+  - Scope: classifier only; no RAG, Hybrid Search, thread context, or extraction mutation.
+
+P4 preflight result:
+
+- P4 classification baseline: `8/8`, accuracy `1.000`.
+- `npm run type-check`: passed.
+
+## P4 Non-Case Exclusion Result
+
+Goal:
+
+- Reduce non-case false case creation, especially realistic non-commercial mail that still contains deadlines, documents, and tasks.
+- Preserve true cooperation/inquiry detection so real collaboration invites are not missed.
+- Keep ambiguous messages uncertain unless thread context can disambiguate them.
+
+Implemented fixture buckets:
+
+- `NON_CASE`: calendar invite, newsletter, account verification, school recommendation/application notice, shopping/order notification, announcement.
+- `CASE_RELATED`: collaboration invite, quote inquiry, deadline/material risk, confirmation/contract, delivery/revision message.
+- `UNCERTAIN`: vague cooperation opener and short acknowledgement.
+
+Implemented classifier/triage hardening:
+
+- School/application notices are classified as non-case announcements before case rules.
+- Order/transaction notifications are classified as system notifications before revision rules, preventing phrases like `修改收件資料` from becoming `revision_request`.
+- Gmail triage mirrors these exclusions so imported Gmail messages are less likely to create cases for administrative or transactional mail.
+
+Validation result:
+
+- P4 classification fixtures: `14/14`, accuracy `1.000`.
+- Non-case false case rate: `0.000`.
+- Case-related miss rate: `0.000`.
+- Uncertain over-create rate: `0.000`.
+- Main extraction regression remains stable: development full overall `0.918`, classification `1.000`, thread context RAG-on `1.000`.
+
+## P5 Weak-Field A/B/C Result
+
+Goal:
+
+- Improve the three residual weak fields: `intent`, `nextAction`, and `missingFields`.
+- Split the large extraction decision into clearer semantic tasks without adding extra model calls.
+- Compare LangChain only when there is a real chain implementation, not by wrapping the same code path and calling it a win.
+
+Compared variants:
+
+- A current pipeline: legacy extraction profile.
+- B improved prompt/schema/rules: `p5_event_decision` profile in the same extraction call path.
+- C LangChain: `not_configured`; there is no LangChain dependency or chain implementation in the repo yet.
+
+P5 comparison metrics from `npm run comparison:p5 --workspace @casebee/api`:
+
+| Dataset | Variant | Weak Avg | Intent | NextAction Exact | NextAction Category | MissingFields Exact |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Development | A current | 0.720 | 0.840 | 0.680 | 0.680 | 0.640 |
+| Development | B P5 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+| Holdout | A current | 0.750 | 1.000 | 0.500 | 0.500 | 0.750 |
+| Holdout | B P5 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+
+Implementation notes:
+
+- `intent` now treats budget/fee mentions as facts, not automatically as inquiry intent; inquiry requires a semantic ask such as quote, estimate, price question, commission, or service request.
+- `nextAction` now avoids stale inferred actions and only emits active actions when explicit text or current stage semantics support them.
+- `missingFields` now adds case requirements by event type, including revision scope, usage rights, required materials, and social/post scope only when context requires them.
+- Required-material extraction no longer treats project names such as `Logo + 名片設計` as missing client-provided materials when the actual request is contract-related.
+- P5 kept RAG and Hybrid Search unchanged.
+
+Regression result after P5:
+
+- `npm run accuracy --workspace @casebee/api`: passed.
+- Development RAG-on full overall: `1.000`.
+- Holdout RAG-on full overall: `1.000`.
+- Thread context RAG-on full overall: `1.000`.
+- RAG fact-field delta remains `0`.
+- `npm run classification:p4 --workspace @casebee/api`: passed, 14/14, bucket accuracy `1.000`.

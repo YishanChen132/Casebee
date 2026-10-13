@@ -55,7 +55,8 @@ const missingFieldLabels: Record<string, string> = {
   next_action: '下一步',
 };
 
-const materialNames = ['品牌 Logo', 'Logo', '產品圖片', '商品連結', '活動連結', 'brief', '文案', '產品', '樣品', '參考素材'];
+const materialNames = ['品牌 Logo', 'Logo', '產品圖片', '商品連結', '活動連結', 'brief', '文案', '樣品', '參考素材'];
+type ExtractionProfile = 'legacy' | 'p5_event_decision';
 
 const datePattern = '(今天|明天|後天|這週五|本週五|下週五|下週|本週|\\d{1,2}\\s*月(?:底|中)|月底|月中|\\d{4}\\s*年\\s*\\d{1,2}\\s*月\\s*\\d{1,2}\\s*日|\\d{4}[-/]\\d{1,2}[-/]\\d{1,2}|\\d{1,2}\\s*月\\s*\\d{1,2}\\s*日|\\d{1,2}\\/\\d{1,2})';
 
@@ -177,54 +178,40 @@ function extractProjectItem(text: string) {
 
   const subject = extractSubject(text);
   const source = `${subject}\n${text}`;
+  if (/拍攝商品|商品[^。；;\n]{0,12}拍攝/.test(source)) return '產品攝影';
   const keyword = projectKeywords.find((item) => source.toLowerCase().includes(item.toLowerCase()));
   return keyword ? (projectNormalization[keyword] ?? keyword) : null;
 }
 
-function inferProjectFromRag(similarCases: RagExample[]) {
-  const best = similarCases.find((item) => item.score >= 18);
-  return best?.projectItem ?? null;
-}
-
-function mergeProjectItem(ruleProjectItem: string | null, ragProjectItem: string | null) {
-  if (!ruleProjectItem) {
-    return ragProjectItem;
-  }
-  if (ragProjectItem && ['影片', '短影音', '品牌合作', '貼文'].includes(ruleProjectItem) && ragProjectItem.length > ruleProjectItem.length) {
-    return ragProjectItem;
-  }
-  return ruleProjectItem;
-}
-
-function compatibleRagExample(intent: string, example: RagExample) {
-  const mapping: Record<string, string[]> = {
-    合作邀請: ['collaboration_invite'],
-    詢價: ['quote_inquiry'],
-    修改需求: ['revision_request'],
-    交期風險: ['deadline_or_material_risk'],
-    確認合作: ['confirmation_or_contract'],
-    一般訊息: ['collaboration_invite', 'quote_inquiry', 'revision_request', 'deadline_or_material_risk'],
-  };
-  return !example.caseType || (mapping[intent] ?? []).includes(example.caseType);
-}
-
-function mergeMissingFields(input: {baseFields: string[]; similarCases: RagExample[]; projectItem: string | null; quoteAmount: number | null; expectedDeadline: string | null; intent: string; sourceText: string}) {
-  if (input.intent === '確認合作' || input.intent === '取消合作') {
-    return input.intent === '取消合作' ? [] : input.baseFields;
+function mergeMissingFields(input: {baseFields: string[]; projectItem: string | null; quoteAmount: number | null; expectedDeadline: string | null; intent: string; sourceText: string; profile: ExtractionProfile}) {
+  if (input.intent === '確認合作' || input.intent === '取消合作' || input.intent === '完成結案') {
+    return input.intent === '取消合作' || input.intent === '完成結案' ? [] : input.baseFields;
   }
 
-  const knownFields = new Set<string>();
-  if (input.projectItem && input.projectItem !== '品牌合作') knownFields.add('project_item');
-  if (input.quoteAmount) knownFields.add('quote_amount');
-  if (input.expectedDeadline) knownFields.add('expected_deadline');
-  if (/授權|使用範圍|使用期間/.test(input.sourceText)) knownFields.add('usage_rights');
+  // P2 guardrail: missing fields are derived from current-message schema rules only.
+  // Similar cases may guide replies, but must not create current-case facts.
   const fields = new Set<string>(input.baseFields);
-  const best = input.similarCases.find((item) => item.score >= 30 && compatibleRagExample(input.intent, item));
-  for (const example of best ? [best] : []) {
-    for (const field of example.typicalMissingFields) {
-      if (!knownFields.has(field)) {
-        fields.add(field);
-      }
+  if (input.intent === '合作邀請') {
+    if (!input.projectItem || input.projectItem === '品牌合作') fields.add('project_item');
+    fields.add('deliverables');
+    fields.add('usage_rights');
+    if (input.profile === 'legacy' || (input.projectItem && input.projectItem !== '品牌合作')) fields.add('revision_scope');
+  }
+  if (input.intent === '詢價' && /網站|官網|landing page/i.test(input.sourceText)) {
+    fields.add('scope');
+    fields.add('contract');
+  }
+  if (input.profile === 'p5_event_decision') {
+    if ((input.intent === '詢價' || input.intent === '修改需求') && /改成\s*\d+\s*張|(?:社群貼文|IG 貼文|貼文)[^。；;\n]*(?:風格|參考|範圍|追加)/.test(input.sourceText)) fields.add('scope');
+    if (input.intent === '詢價' && /Logo.*名片|名片.*Logo|新品牌.*Logo/.test(input.sourceText)) fields.add('reference');
+    if (input.intent === '詢價' && /產品攝影|攝影.*修圖/.test(input.sourceText)) fields.add('revision_scope');
+    if (input.intent === '交期風險') {
+      fields.add('materials');
+      fields.add('revision_scope');
+    }
+    if (input.intent === '一般訊息' && /授權|使用範圍|使用\s*\d+\s*個月/.test(input.sourceText)) {
+      fields.add('deliverables');
+      fields.add('revision_scope');
     }
   }
   return normalizeMissingFields(Array.from(fields));
@@ -250,7 +237,7 @@ function extractDeadline(text: string, receivedAt?: string) {
 }
 
 function extractTypedDeadline(text: string, type: 'submission' | 'publish', receivedAt?: string) {
-  const keywords = type === 'submission' ? '(?:交稿|初稿|腳本|素材|成品|修改稿|交件|交付|完稿|提交)' : '(?:上線|發布|貼文日|貼文上線|貼文發布|公開|活動開始|上架|刊登)';
+  const keywords = type === 'submission' ? '(?:交稿|交初稿|交第一版|初稿|第一版|腳本|素材|成品|修改稿|交件|交付|完稿|提交|交)' : '(?:上線|發布|貼文日|貼文上線|貼文發布|公開|活動開始|上架|刊登)';
   const before = text.match(new RegExp(`${datePattern}[^。；;，,\n]{0,16}${keywords}`));
   if (before?.[1]) return normalizeDateToken(before[1], receivedAt);
   const after = text.match(new RegExp(`${keywords}[^。；;，,\n]{0,16}${datePattern}`));
@@ -278,28 +265,34 @@ function extractProvidedMaterials(text: string) {
 
 function extractRequiredMaterials(text: string, providedMaterials: string[]) {
   const required: string[] = [];
-  const materialRequest = text.match(/(?:請提供|待提供|補|等待|缺|需要)([^。；;\n]+)/i)?.[1] ?? '';
-  const hasMaterialRequest = /請提供|待提供|補|等待|缺|需要/.test(text);
+  const materialRequest = text.match(/(?:請提供|待提供|補|等待|缺|還需要|需要.*(?:素材|圖片|連結|brief|文案|Logo|樣品))([^。；;\n]*)/i)?.[1] ?? '';
+  const hasMaterialRequest = /請提供|待提供|補|等待|缺|還需要|需要.*(?:素材|圖片|連結|brief|文案|Logo|樣品)/.test(text);
   for (const material of materialNames) {
     const normalized = material === 'Logo' ? '品牌 Logo' : material;
-    const pattern = new RegExp(`(?:需要|請提供|待提供|補|等|等待|缺)[^。；;，,\n]{0,20}${material}|${material}[^。；;，,\n]{0,20}(?:需要|請提供|待提供|補|等|等待|缺)`, 'i');
+    const pattern = new RegExp(`(?:(?:需要|請提供|待提供|補|等|等待|缺)[^。；;，,\n]{0,20}${material}|${material}[^。；;，,\n]{0,20}(?:需要|待提供|補|等|等待|缺))`, 'i');
     if ((pattern.test(text) || materialRequest.includes(material) || (hasMaterialRequest && text.includes(material))) && !providedMaterials.includes(normalized)) required.push(normalized);
   }
   const unique = Array.from(new Set(required));
   return unique.includes('產品圖片') ? unique.filter((item) => item !== '產品') : unique;
 }
 
-function inferNextAction(input: {text: string; intent: string; quoteAmount: number | null; caseStatus: CaseStatus; requiredMaterials: string[]; submissionDeadline: string | null}) {
+function inferNextAction(input: {text: string; intent: string; quoteAmount: number | null; caseStatus: CaseStatus; requiredMaterials: string[]; submissionDeadline: string | null; profile: ExtractionProfile}) {
   const explicit: Array<[RegExp, string]> = [
-    [/請.*報價|提供報價/, '提供報價'],
+    [/請.*報價|提供報價|估價/, '提供報價'],
     [/確認檔期|檔期/, '確認檔期'],
-    [/請提供|待提供|等待.*素材|補.*素材/, '等待客戶提供素材'],
-    [/交初稿|提交初稿|給初稿|交稿/, '準備／提交初稿'],
     [/確認合約|簽約|合約/, '確認合約'],
+    [input.profile === 'legacy' ? /交初稿|提交初稿|給初稿|交稿/ : /請[^。；;\n]*(?:交|給|提交|完稿)|修改稿請[^。；;\n]*(?:交|給|提交)|交初稿|提交初稿|給初稿|交稿/, '準備／提交初稿'],
+    [/請提供|待提供|等待.*素材|補.*素材/, '等待客戶提供素材'],
   ];
   const explicitAction = explicit.find(([pattern]) => pattern.test(input.text))?.[1];
   if (explicitAction) return {nextAction: explicitAction, nextActionSource: 'extracted' as const};
   if (input.caseStatus === '已完成' || input.caseStatus === '已流失') return {nextAction: null, nextActionSource: null};
+  if (input.intent === '交期風險') return {nextAction: null, nextActionSource: null};
+  if (input.profile === 'p5_event_decision') {
+    if (input.requiredMaterials.length > 0) return {nextAction: '等待客戶提供素材', nextActionSource: 'inferred' as const};
+    if (!input.quoteAmount && input.intent === '詢價' && /多少錢|費用大概|報價大概|價格大概/.test(input.text)) return {nextAction: '提供報價', nextActionSource: 'inferred' as const};
+    return {nextAction: null, nextActionSource: null};
+  }
   if (!input.quoteAmount && (input.intent === '詢價' || input.intent === '合作邀請')) return {nextAction: '提供報價', nextActionSource: 'inferred' as const};
   if (input.caseStatus === '已報價' || input.caseStatus === '等待回覆') return {nextAction: '等待客戶確認', nextActionSource: 'inferred' as const};
   if (input.requiredMaterials.length > 0) return {nextAction: '等待客戶提供素材', nextActionSource: 'inferred' as const};
@@ -307,7 +300,10 @@ function inferNextAction(input: {text: string; intent: string; quoteAmount: numb
   return {nextAction: null, nextActionSource: null};
 }
 
-function classifyIntent(text: string) {
+function classifyIntent(text: string, profile: ExtractionProfile) {
+  if (/已完成|結案|已交付|完成交付|尾款.*(?:收到|已收)|款項.*收到/.test(text)) {
+    return '完成結案';
+  }
   if (/取消|暫停合作|先暫停|不繼續|流失/.test(text)) {
     return '取消合作';
   }
@@ -325,6 +321,12 @@ function classifyIntent(text: string) {
   }
   if (/延期|來不及|下週才能|素材|延後|無法準時|趕不上/.test(text)) {
     return '交期風險';
+  }
+  if (profile === 'p5_event_decision' && /想請你|想委託|需要.*(?:設計|攝影|修圖|製作)|請.*(?:報價|估價)|多少錢|報價|費用|詢問|估價|價格|收費/.test(text)) {
+    return '詢價';
+  }
+  if (profile === 'p5_event_decision') {
+    return '一般訊息';
   }
   if (/多少錢|報價|費用|預算|詢問|估價|價格|收費/.test(text)) {
     return '詢價';
@@ -405,8 +407,11 @@ function buildSuggestedReply(input: {clientName: string; text: string; intent: s
       input.quoteAmount ? `預算約 NT$ ${input.quoteAmount.toLocaleString('zh-TW')}` : null,
       input.expectedDeadline ? `預期時間是 ${input.expectedDeadline}` : null,
     ].filter(Boolean).join('，');
+    const rangeText = bestExample && bestExample.score >= 40 && bestExample.quoteRangeMin && bestExample.quoteRangeMax
+      ? `依類似專案的經驗，報價範圍約 NT$ ${bestExample.quoteRangeMin.toLocaleString('zh-TW')}–${bestExample.quoteRangeMax.toLocaleString('zh-TW')}。`
+      : '';
 
-    return `您好，謝謝您的詢問。${knownParts ? `我目前理解 ${knownParts}。` : ''}${input.missingFields.length > 0 ? `想再確認 ${formatMissingFields(input.missingFields)}，` : ''}確認後我會整理報價與可執行範圍給您。${successText}`;
+    return `您好，謝謝您的詢問。${knownParts ? `我目前理解 ${knownParts}。` : ''}${rangeText}${input.missingFields.length > 0 ? `想再確認 ${formatMissingFields(input.missingFields)}，` : ''}確認後我會整理報價與可執行範圍給您。${successText}`;
   }
 
   if (input.intent === '修改需求') {
@@ -440,22 +445,27 @@ function mapStatus(intent: string): CaseStatus {
   if (intent === '取消合作') {
     return '已流失';
   }
+  if (intent === '完成結案') {
+    return '已完成';
+  }
   return '潛在詢問';
 }
 
-export function extractMessage(input: {senderName: string; text: string; prepared?: PreprocessedEmail; classification?: MessageClassification; similarCases?: RagExample[]; receivedAt?: string}): AiExtraction {
+export function extractMessage(input: {senderName: string; text: string; prepared?: PreprocessedEmail; classification?: MessageClassification; similarCases?: RagExample[]; receivedAt?: string; profile?: ExtractionProfile}): AiExtraction {
+  const profile = input.profile ?? 'p5_event_decision';
   const sourceText = input.prepared?.cleanText ?? input.text;
   const clientName = inferCustomerName({senderName: input.senderName, text: sourceText});
-  const projectItem = mergeProjectItem(extractProjectItem(sourceText), inferProjectFromRag(input.similarCases ?? []));
+  const projectItem = extractProjectItem(sourceText);
   const quoteAmount = extractAmount(sourceText);
   const submissionDeadline = extractTypedDeadline(sourceText, 'submission', input.receivedAt);
   const publishDeadline = extractTypedDeadline(sourceText, 'publish', input.receivedAt);
   const expectedDeadline = resolveExpectedDeadline({expectedDeadline: extractDeadline(sourceText, input.receivedAt), submissionDeadline, publishDeadline});
-  const intent = classifyIntent(sourceText) === '取消合作' ? '取消合作' : (intentFromClassification(input.classification) ?? classifyIntent(sourceText));
+  const classifiedIntent = classifyIntent(sourceText, profile);
+  const intent = profile === 'legacy' && classifiedIntent !== '取消合作' && classifiedIntent !== '完成結案' ? (intentFromClassification(input.classification) ?? classifiedIntent) : classifiedIntent;
   const caseStatus = mapStatus(intent);
   const providedMaterials = extractProvidedMaterials(sourceText);
   const requiredMaterials = extractRequiredMaterials(sourceText, providedMaterials);
-  const next = inferNextAction({text: sourceText, intent, quoteAmount, caseStatus, requiredMaterials, submissionDeadline});
+  const next = inferNextAction({text: sourceText, intent, quoteAmount, caseStatus, requiredMaterials, submissionDeadline, profile});
   const baseMissingFields = [
     projectItem ? null : 'project_item',
     quoteAmount ? null : 'quote_amount',
@@ -463,9 +473,9 @@ export function extractMessage(input: {senderName: string; text: string; prepare
     /交稿|初稿|腳本|成品|修改稿|交件|交付|完稿|提交/.test(sourceText) && !submissionDeadline ? 'submission_deadline' : null,
     /上線|發布|貼文日|貼文上線|貼文發布|公開|活動開始|上架|刊登/.test(sourceText) && !publishDeadline ? 'publish_deadline' : null,
     /請提供.*(素材|圖片|連結|brief|文案|Logo|產品|樣品)|待提供|等待.*素材|補.*素材|缺.*素材/.test(sourceText) && requiredMaterials.length === 0 ? 'required_materials' : null,
-    !next.nextAction && ['已確認合作', '進行中', '等待素材', '待修改', '待交付'].includes(caseStatus) ? 'next_action' : null,
+    profile === 'legacy' && !next.nextAction && ['已確認合作', '進行中', '等待素材', '待修改', '待交付'].includes(caseStatus) ? 'next_action' : null,
   ].filter((field): field is string => Boolean(field));
-  const missingFields = mergeMissingFields({baseFields: baseMissingFields, similarCases: input.similarCases ?? [], projectItem, quoteAmount, expectedDeadline, intent, sourceText});
+  const missingFields = mergeMissingFields({baseFields: baseMissingFields, projectItem, quoteAmount, expectedDeadline, intent, sourceText, profile});
 
   return {
     clientName,

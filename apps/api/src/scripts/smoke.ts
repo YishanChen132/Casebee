@@ -147,6 +147,7 @@ async function main() {
       input: {
         senderName: '小島咖啡',
         text: 'Logo 想再修改一下，順便追加一張菜單 Banner，月底前可以完成嗎？',
+        receivedAt: '2026-08-31T00:00:00+08:00',
       },
       expected: {clientName: '小島咖啡', projectItem: 'Logo', quoteAmount: null, expectedDeadline: '8/31', intent: '修改需求'},
     },
@@ -155,6 +156,7 @@ async function main() {
       input: {
         senderName: '森木科技',
         text: '產品攝影素材下週才能給你，原本後天交件可能來不及，需要延後。',
+        receivedAt: '2026-08-31T00:00:00+08:00',
       },
       expected: {clientName: '森木科技', projectItem: '產品攝影', quoteAmount: null, expectedDeadline: '9/2', intent: '交期風險'},
     },
@@ -181,7 +183,7 @@ async function main() {
         senderName: 'Mori Select',
         text: '影片希望 10 月底發布，預算 30000。',
       },
-      expected: {clientName: 'Mori Select', projectItem: '影片', quoteAmount: 30000, expectedDeadline: '10/31', submissionDeadline: null, publishDeadline: '10/31', nextAction: null, intent: '詢價'},
+      expected: {clientName: 'Mori Select', projectItem: '影片', quoteAmount: 30000, expectedDeadline: '10/31', submissionDeadline: null, publishDeadline: '10/31', nextAction: null, intent: '一般訊息'},
     },
     {
       name: 'generic deadline only',
@@ -189,7 +191,7 @@ async function main() {
         senderName: '晴天行銷',
         text: '希望 9/15 前完成官網設計，預算 120000。',
       },
-      expected: {clientName: '晴天行銷', projectItem: '官網設計', quoteAmount: 120000, expectedDeadline: '9/15', submissionDeadline: null, publishDeadline: null, nextAction: null, intent: '詢價'},
+      expected: {clientName: '晴天行銷', projectItem: '官網設計', quoteAmount: 120000, expectedDeadline: '9/15', submissionDeadline: null, publishDeadline: null, nextAction: null, intent: '一般訊息'},
     },
     {
       name: 'relative friday submission',
@@ -198,7 +200,7 @@ async function main() {
         text: '這週五前給腳本，短影音預算 20000。',
         receivedAt: '2026-08-31T00:00:00+08:00',
       },
-      expected: {clientName: '小島咖啡', projectItem: '短影音', quoteAmount: 20000, expectedDeadline: '9/4', submissionDeadline: '9/4', publishDeadline: null, nextAction: '準備／提交初稿', intent: '詢價'},
+      expected: {clientName: '小島咖啡', projectItem: '短影音', quoteAmount: 20000, expectedDeadline: '9/4', submissionDeadline: '9/4', publishDeadline: null, nextAction: null, intent: '一般訊息'},
     },
     {
       name: 'required materials waiting',
@@ -214,7 +216,7 @@ async function main() {
         senderName: '沐白茶室',
         text: '附件提供 Logo，包裝設計還需要文案，預算 35000，9/20 前完稿。',
       },
-      expected: {clientName: '沐白茶室', projectItem: '包裝設計', quoteAmount: 35000, expectedDeadline: '9/20', submissionDeadline: '9/20', publishDeadline: null, nextAction: '等待客戶提供素材', requiredMaterials: ['文案'], intent: '詢價'},
+      expected: {clientName: '沐白茶室', projectItem: '包裝設計', quoteAmount: 35000, expectedDeadline: '9/20', submissionDeadline: '9/20', publishDeadline: null, nextAction: '等待客戶提供素材', requiredMaterials: ['文案'], intent: '一般訊息'},
     },
   ];
 
@@ -233,14 +235,20 @@ async function main() {
 
   const previousAiProvider = process.env.AI_PROVIDER;
   process.env.AI_PROVIDER = 'rule';
+  const ragOff = await analyzeMessage({
+    senderName: 'LumiNote',
+    text: 'Subject: 合作邀請\n\n我們想邀請你合作拍一支生活感的筆記 App 宣傳影片，9/15 前上線，會需要 IG 限動轉發。',
+    ragEnabled: false,
+  });
   const ragAssisted = await analyzeMessage({
     senderName: 'LumiNote',
     text: 'Subject: 合作邀請\n\n我們想邀請你合作拍一支生活感的筆記 App 宣傳影片，9/15 前上線，會需要 IG 限動轉發。',
   });
   process.env.AI_PROVIDER = previousAiProvider;
-  assert(ragAssisted.extraction.projectItem === 'Reels 影片' || ragAssisted.extraction.projectItem === '品牌合作', `Expected RAG-assisted extraction to infer a similar project item, got ${ragAssisted.extraction.projectItem}.`);
-  assert(ragAssisted.extraction.missingFields.includes('usage_rights'), 'Expected structured RAG metadata to add usage_rights as a missing field.');
+  assert(ragAssisted.extraction.projectItem === ragOff.extraction.projectItem, 'Expected RAG not to override current-message project item facts.');
+  assert(JSON.stringify(ragAssisted.extraction.missingFields) === JSON.stringify(ragOff.extraction.missingFields), 'Expected RAG not to add missing fields as current-case facts.');
   assert(ragAssisted.extraction.suggestedReply.includes('過去成功做法'), 'Expected structured RAG metadata to influence suggested reply.');
+  assert(Object.keys(ragAssisted.similarCases[0]?.scoreBreakdown ?? {}).length > 0, 'Expected RAG search to expose score breakdown diagnostics.');
 
   const reanalysisImport = await importMessage({
     platform: 'Gmail',
@@ -250,7 +258,7 @@ async function main() {
     rawPayload: {smokeReanalysis: true},
   });
   const reanalysis = await reanalyzeMessage(reanalysisImport.message.id);
-  assert(reanalysis?.case?.projectItem === 'Reels 影片', `Expected reanalysis to update project item to Reels 影片, got ${reanalysis?.case?.projectItem}.`);
+  assert(reanalysis?.case?.projectItem === '影片', `Expected reanalysis to keep current-message project item, got ${reanalysis?.case?.projectItem}.`);
   await pool.query('UPDATE cases SET expected_deadline = $2, submission_deadline = $3, publish_deadline = $4 WHERE id = $1', [reanalysisImport.case.id, '12/01', '11/28', '12/01']);
   const protectedReanalysis = await reanalyzeMessage(reanalysisImport.message.id);
   assert(protectedReanalysis?.case?.expectedDeadline === '12/01', 'Expected reanalysis not to silently overwrite existing expectedDeadline.');

@@ -7,11 +7,12 @@ import {extractMessage} from '../services/extractionService.js';
 import {validateExtraction} from '../services/extractionValidator.js';
 import {classifyPreparedMessage, type MessageType} from '../services/messageClassifier.js';
 import {findSimilarCasesForText} from '../services/ragService.js';
+import {analyzeMessage} from '../services/aiService.js';
 import {analyzeThreadAwareMessage} from '../services/threadContextService.js';
 
-type ExpectedExtraction = Pick<AiExtraction, 'clientName' | 'projectItem' | 'quoteAmount' | 'expectedDeadline' | 'submissionDeadline' | 'publishDeadline' | 'nextAction' | 'requiredMaterials' | 'intent' | 'missingFields'>;
+type ExpectedExtraction = Pick<AiExtraction, 'clientName' | 'projectItem' | 'quoteAmount' | 'expectedDeadline' | 'submissionDeadline' | 'publishDeadline' | 'nextAction' | 'requiredMaterials' | 'intent' | 'missingFields'> & Partial<Pick<AiExtraction, 'caseStatus'>>;
 type DatasetName = 'development' | 'holdout' | 'thread';
-type RagMode = 'rag_on' | 'rag_off' | 'thread_context';
+type RagMode = 'rag_on' | 'rag_off' | 'thread_current_rag_off' | 'thread_current_rag_on' | 'thread_context_rag_off' | 'thread_context_rag_on' | 'thread_context';
 type NormalizedErrorType = 'false_positive' | 'false_negative' | 'wrong_value' | 'normalization_mismatch' | 'evaluation_mismatch' | 'thread_inheritance_error' | 'RAG_interference' | 'rule_engine_interference';
 
 interface ExtractionFixture {
@@ -25,7 +26,7 @@ interface ExtractionFixture {
 }
 
 interface FieldResult {
-  field: keyof ExpectedExtraction | 'classification' | 'inheritedFields' | 'changedFields' | 'conflictingFields' | 'needsHumanReview';
+  field: keyof ExpectedExtraction | 'classification' | 'inheritedFields' | 'changedFields' | 'clearedFields' | 'conflictingFields' | 'fieldSources' | 'needsHumanReview';
   passed: boolean;
   expected: unknown;
   actual: unknown;
@@ -54,7 +55,9 @@ interface ThreadFixture {
   expected: Pick<AiExtraction, 'clientName' | 'projectItem' | 'quoteAmount' | 'expectedDeadline' | 'submissionDeadline' | 'publishDeadline' | 'nextAction' | 'requiredMaterials' | 'intent'> & {
     inheritedFields: string[];
     changedFields: string[];
+    clearedFields?: string[];
     conflictingFields: string[];
+    fieldSources?: Record<string, string>;
     needsHumanReview: boolean;
   };
 }
@@ -63,6 +66,7 @@ const developmentFixturePath = fileURLToPath(new URL('../fixtures/extraction/acc
 const holdoutFixturePath = fileURLToPath(new URL('../fixtures/extraction/holdout-fixtures.json', import.meta.url));
 const threadFixturePath = fileURLToPath(new URL('../fixtures/extraction/thread-fixtures.json', import.meta.url));
 const scalarFields: Array<keyof Omit<ExpectedExtraction, 'missingFields' | 'requiredMaterials'>> = ['clientName', 'projectItem', 'quoteAmount', 'expectedDeadline', 'submissionDeadline', 'publishDeadline', 'nextAction', 'intent'];
+const optionalScalarFields: Array<keyof Pick<AiExtraction, 'caseStatus'>> = ['caseStatus'];
 const reportedFields = ['projectItem', 'expectedDeadline', 'submissionDeadline', 'publishDeadline', 'nextAction', 'intent', 'requiredMaterials', 'missingFields'];
 const legacyCoreFields = new Set(['clientName', 'projectItem', 'quoteAmount', 'expectedDeadline', 'intent', 'missingFields', 'classification']);
 const extendedFields = new Set(['submissionDeadline', 'publishDeadline', 'nextAction', 'requiredMaterials']);
@@ -128,7 +132,7 @@ function actionCategory(value: unknown) {
 
 function normalizedErrorType(result: FieldResult, pairedPassed?: boolean): NormalizedErrorType {
   if (pairedPassed) return 'RAG_interference';
-  if (result.field === 'inheritedFields' || result.field === 'changedFields' || result.field === 'conflictingFields') return 'thread_inheritance_error';
+  if (result.field === 'inheritedFields' || result.field === 'changedFields' || result.field === 'clearedFields' || result.field === 'conflictingFields' || result.field === 'fieldSources') return 'thread_inheritance_error';
   if (result.errorType === 'extra_fields' || result.errorType === 'false_positive') return 'false_positive';
   if (result.errorType === 'missing_required_fields' || result.errorType === 'missing') return 'false_negative';
   if (result.field === 'expectedDeadline' || result.field === 'submissionDeadline' || result.field === 'publishDeadline') {
@@ -143,7 +147,7 @@ function normalizedErrorType(result: FieldResult, pairedPassed?: boolean): Norma
 
 function possibleCause(result: FieldResult, run: Awaited<ReturnType<typeof runFixture>> | Awaited<ReturnType<typeof runThreadFixture>>, dataset: DatasetName, ragMode: RagMode, pairedPassed?: boolean) {
   if (pairedPassed) return 'RAG-on differs from RAG-off and introduced this field mismatch.';
-  if (dataset === 'thread' || result.field === 'inheritedFields' || result.field === 'changedFields' || result.field === 'conflictingFields') return 'Thread context inheritance/conflict expectation differs from current comparison output.';
+  if (dataset === 'thread' || result.field === 'inheritedFields' || result.field === 'changedFields' || result.field === 'clearedFields' || result.field === 'conflictingFields' || result.field === 'fieldSources') return 'Thread context inheritance/conflict expectation differs from current comparison output.';
   if (result.field === 'nextAction') return 'Exact nextAction string evaluation may be stricter than action semantics; compare category metrics before changing extraction.';
   if (result.field === 'missingFields') return 'MissingFields exact-set scoring hides partial matches; inspect missing/extra fields and field-level F1.';
   if (result.field === 'expectedDeadline') return 'Could be expectedDeadline compatibility strategy, relative-date normalization, or fixture natural-language/date-format mismatch.';
@@ -305,6 +309,10 @@ function compareStringSet(field: FieldResult['field'], expected: string[], actua
   return {field, passed, expected, actual, errorType: passed ? null : missing.length > 0 && extra.length > 0 ? 'missing_and_extra_fields' : missing.length > 0 ? 'missing_required_fields' : 'extra_fields'};
 }
 
+function sourcePairs(value: Record<string, unknown> | undefined) {
+  return Object.entries(value ?? {}).map(([field, source]) => `${field}:${String(source)}`).sort();
+}
+
 function compareScalar(field: keyof Omit<ExpectedExtraction, 'missingFields' | 'requiredMaterials'>, expected: ExpectedExtraction, actual: AiExtraction, receivedAt?: string): FieldResult {
   const expectedValue = expected[field] ?? null;
   const actualValue = actual[field];
@@ -340,6 +348,9 @@ async function runFixture(fixture: ExtractionFixture, ragEnabled: boolean) {
   if (fixture.expected) {
     for (const field of scalarFields) {
       fields.push(compareScalar(field, fixture.expected, extraction, fixture.receivedAt));
+    }
+    for (const field of optionalScalarFields) {
+      if (field in fixture.expected) fields.push(compareScalar(field, fixture.expected, extraction, fixture.receivedAt));
     }
     fields.push(compareStringSet('requiredMaterials', fixture.expected.requiredMaterials ?? [], extraction.requiredMaterials));
     fields.push(compareMissingFields(fixture.expected.missingFields, extraction.missingFields));
@@ -404,23 +415,39 @@ function accuracyForFields(results: FieldResult[], fieldSet: Set<string>) {
   };
 }
 
-async function runThreadFixture(fixture: ThreadFixture) {
+function compareThreadExtraction(fixture: ThreadFixture, extraction: AiExtraction) {
+  const fields: FieldResult[] = [];
+
+  for (const field of ['clientName', 'projectItem', 'quoteAmount', 'expectedDeadline', 'submissionDeadline', 'publishDeadline', 'nextAction', 'intent'] as const) {
+    fields.push(compareScalar(field, {...fixture.expected, missingFields: []}, extraction));
+  }
+  fields.push(compareStringSet('requiredMaterials', fixture.expected.requiredMaterials ?? [], extraction.requiredMaterials));
+  return fields;
+}
+
+async function runThreadCurrentFixture(fixture: ThreadFixture, ragEnabled: boolean) {
+  const current = fixture.messages[fixture.messages.length - 1];
+  const analyzed = await analyzeMessage({senderName: current.senderName, text: current.text, ragEnabled});
+  return {fixture, extraction: analyzed.extraction, similarCases: analyzed.similarCases, fields: compareThreadExtraction(fixture, analyzed.extraction)};
+}
+
+async function runThreadFixture(fixture: ThreadFixture, ragEnabled = true) {
   const current = fixture.messages[fixture.messages.length - 1];
   const {result} = await analyzeThreadAwareMessage({
     senderName: current.senderName,
     text: current.text,
     threadMessages: makeThreadMessages(fixture),
     existingCase: makeCaseRecord(fixture),
+    ragEnabled,
   });
-  const fields: FieldResult[] = [];
-
-  for (const field of ['clientName', 'projectItem', 'quoteAmount', 'expectedDeadline', 'submissionDeadline', 'publishDeadline', 'nextAction', 'intent'] as const) {
-    fields.push(compareScalar(field, {...fixture.expected, missingFields: []}, result.extraction));
-  }
-  fields.push(compareStringSet('requiredMaterials', fixture.expected.requiredMaterials ?? [], result.extraction.requiredMaterials));
+  const fields: FieldResult[] = compareThreadExtraction(fixture, result.extraction);
   fields.push(compareStringSet('inheritedFields', fixture.expected.inheritedFields, fieldNames(result.inheritedFields)));
   fields.push(compareStringSet('changedFields', fixture.expected.changedFields, fieldNames(result.changedFields)));
+  fields.push(compareStringSet('clearedFields', fixture.expected.clearedFields ?? [], fieldNames(result.clearedFields)));
   fields.push(compareStringSet('conflictingFields', fixture.expected.conflictingFields, result.conflictingFields.map((field) => field.field).sort()));
+  if (fixture.expected.fieldSources) {
+    fields.push(compareStringSet('fieldSources', sourcePairs(fixture.expected.fieldSources), sourcePairs(result.fieldSources)));
+  }
   fields.push({field: 'needsHumanReview', passed: result.needsHumanReview === fixture.expected.needsHumanReview, expected: fixture.expected.needsHumanReview, actual: result.needsHumanReview, errorType: result.needsHumanReview === fixture.expected.needsHumanReview ? null : 'human_review_mismatch'});
 
   return {fixture, result, fields};
@@ -531,16 +558,32 @@ async function runExtractionDataset(path: string) {
 
 async function runThreadDataset() {
   const fixtures = JSON.parse(await readFile(threadFixturePath, 'utf8')) as ThreadFixture[];
-  const runs = [];
+  const currentRagOffRuns = [];
+  const currentRagOnRuns = [];
+  const contextRagOffRuns = [];
+  const contextRagOnRuns = [];
   for (const fixture of fixtures) {
-    runs.push(await runThreadFixture(fixture));
+    currentRagOffRuns.push(await runThreadCurrentFixture(fixture, false));
+    currentRagOnRuns.push(await runThreadCurrentFixture(fixture, true));
+    contextRagOffRuns.push(await runThreadFixture(fixture, false));
+    contextRagOnRuns.push(await runThreadFixture(fixture, true));
   }
-  const summary = summarize(runs, {dataset: 'thread', ragMode: 'thread_context'});
+  const currentOnlyRagOff = summarize(currentRagOffRuns, {dataset: 'thread', ragMode: 'thread_current_rag_off'});
+  const currentOnlyRagOn = summarize(currentRagOnRuns, {dataset: 'thread', ragMode: 'thread_current_rag_on', pairedRuns: currentRagOffRuns});
+  const threadContextRagOff = summarize(contextRagOffRuns, {dataset: 'thread', ragMode: 'thread_context_rag_off'});
+  const threadContextRagOn = summarize(contextRagOnRuns, {dataset: 'thread', ragMode: 'thread_context_rag_on', pairedRuns: contextRagOffRuns});
   return {
     fixtureCount: fixtures.length,
-    ...summary,
-    needsHumanReviewCount: runs.filter((run) => run.result.needsHumanReview).length,
-    conflicts: runs.flatMap((run) => run.result.conflictingFields.map((field) => ({fixture: run.fixture.id, ...field}))),
+    currentOnlyRagOff,
+    currentOnlyRagOn,
+    threadContextRagOff,
+    threadContextRagOn,
+    currentRagBeforeAfter: compareRag(currentOnlyRagOff, currentOnlyRagOn),
+    threadContextBeforeAfter: compareRag(threadContextRagOff, threadContextRagOn),
+    threadContextGainOverCurrent: compareRag(currentOnlyRagOn, threadContextRagOn),
+    ...threadContextRagOn,
+    needsHumanReviewCount: contextRagOnRuns.filter((run) => run.result.needsHumanReview).length,
+    conflicts: contextRagOnRuns.flatMap((run) => run.result.conflictingFields.map((field) => ({fixture: run.fixture.id, ...field}))),
   };
 }
 
@@ -574,7 +617,7 @@ async function main() {
       directlyComparableWithPreviousOverallAccuracy: false,
       reason: 'Day 9-2B-2 added scored fields for submissionDeadline, publishDeadline, nextAction, and requiredMaterials and expanded development/thread fixtures, so the denominator and task difficulty changed.',
     },
-    errorOverview: errorOverview([development, holdout, thread]),
+    errorOverview: errorOverview([development, holdout, {detailedErrors: thread.threadContextRagOn.detailedErrors}]),
     development,
     holdout,
     thread,

@@ -1,5 +1,143 @@
 # Development Log
 
+## 2026-10-12 - RAG Reply and Rule Context Integration
+
+### Completed
+- Added RAG quote-range support to inquiry reply drafts when a high-scoring similar case has `quoteRangeMin` and `quoteRangeMax`.
+- Kept existing RAG reply quality by preserving historical-case references and `successPattern` text.
+- Updated rule context generation to strip `相似案例：...` summary fragments before scanning alert keywords, avoiding RAG text causing false rule alerts.
+- Stabilized smoke relative-date fixtures by pinning `receivedAt` for `月底` and `後天` cases.
+
+### Decisions
+- Did not change RAG retrieval scoring, storage schema, LINE integration, or LINE webhook behavior.
+- Kept the change isolated to RAG-assisted replies and rule-context sanitation so it does not conflict with future LINE login or LINE message integration work.
+
+## 2026-10-12 - P0 Existing Case Field Merge
+
+### Completed
+- Added thread-aware field merge semantics for inherit, update, conflict, and clear decisions.
+- Added `fieldSources` and `clearedFields` to thread-aware extraction results.
+- Persisted `field_sources` and `cleared_fields` JSON metadata on `ai_extractions`.
+- Updated reanalysis to use the same thread-aware existing-case merge path as message import.
+- Expanded thread fixture coverage to verify safe updates, conflicts, compatible inheritance, terminal clear behavior, field sources, and cleared fields.
+
+### Decisions
+- Missing existing values can be safely updated from the current message without human review.
+- Conflicting critical values keep the existing case value and go through human review.
+- Terminal/cancelled messages can clear action/material fields.
+- Hybrid Search remains frozen until P0-P2 stabilize.
+
+### Verification
+- `npm run db:migrate`: passed.
+- `npm run accuracy`: passed; thread context RAG-on full overall `1.000` across 6 fixtures and 90 scored fields.
+- `npm run type-check`: passed.
+- `npm run build`: passed.
+- `npm run smoke`: passed.
+
+## 2026-10-12 - P1 Typed Field Rules
+
+### Completed
+- Added optional `caseStatus` scoring to the extraction accuracy evaluator.
+- Added completed/closed-case intent detection for `已完成`, `結案`, `已交付`, and final-payment received language.
+- Mapped completed cases to `已完成`, with no next action and no missing fields.
+- Tightened typed submission deadline detection for `第一版`, `交第一版`, and generic `交` in deadline context.
+- Reduced required-material false positives by avoiding generic `需要產品...` matches as material requests.
+- Treated `估價` as an explicit quote next action and prevented deadline-risk messages from auto-generating draft-preparation next actions.
+
+### Verification
+- `npm run accuracy`: passed; development ragOff full overall `0.902`, extended overall `0.920`, thread context RAG-on `1.000`.
+- `npm run type-check`: passed.
+- `npm run build`: passed.
+- `npm run smoke`: passed.
+
+## 2026-10-12 - P2 RAG Guardrails
+
+### Completed
+- Removed RAG as a direct source for current-case `projectItem` extraction.
+- Removed RAG `typicalMissingFields` as a direct source for current-case `missingFields`.
+- Kept RAG available for similar-case lookup, suggested replies, quote range context, and success-pattern guidance.
+- Moved recurring collaboration/website missing-field requirements into deterministic schema rules instead of similarity-derived facts.
+- Updated smoke coverage to assert RAG on/off produce the same extraction facts while RAG can still influence suggested replies.
+
+### Verification
+- `npm run accuracy`: passed; RAG before/after fact-field delta `0`, development ragOff full overall `0.918`, thread context RAG-on `1.000`.
+- `npm run type-check`: passed.
+- `npm run build`: passed.
+- `npm run smoke`: passed.
+
+## 2026-10-12 - P3 Hybrid Search Freeze and Diagnostics
+
+### Completed
+- Kept the current deterministic Hybrid Search architecture frozen: keyword/token overlap, project aliases, phrase groups, case type, and amount proximity.
+- Did not introduce embeddings, vector search, or cross-thread case linking yet.
+- Added `scoreBreakdown` diagnostics to RAG examples returned by search so similar-case ranking can be inspected without changing behavior.
+- Added smoke coverage to ensure RAG search exposes score breakdown while P2 fact guardrails remain active.
+
+### Decision
+- Search optimization is not the current bottleneck after P0-P2. Same-thread/existing-case context and typed extraction rules provide the measurable accuracy gains.
+- Vector/embedding search should wait until a targeted retrieval fixture proves the correct historical context exists but deterministic search fails to retrieve it.
+
+### Verification
+- `npm run accuracy`: passed; RAG before/after fact-field delta `0`, thread context RAG-on `1.000`.
+- `npm run type-check`: passed.
+- `npm run build`: passed.
+- `npm run smoke`: passed.
+
+## 2026-10-12 - P4 Preflight Classification Baseline
+
+### Completed
+- Preserved the P0-P3 commit baseline at `b5848ed Add hybrid search diagnostics`.
+- Confirmed classification entry points:
+  - `messageClassifier.ts` handles extraction accuracy and `analyzeMessage` classification.
+  - `gmailService.ts` has a separate Gmail import triage path for non-case filtering.
+- Reviewed current non-case fixtures: calendar invite, newsletter, system/security notification, and announcement.
+- Confirmed latest accuracy residual errors are concentrated in `nextAction`, `missingFields`, and `intent`; classification currently has no errors in the main fixture set.
+- Added P4-only classification fixtures and `classification:p4` script that tests classifier behavior without invoking RAG, Hybrid Search, or extraction.
+
+### Verification
+- `npm run classification:p4 --workspace @casebee/api`: passed, 8/8, accuracy `1.000`.
+- `npm run type-check`: passed.
+
+## 2026-10-12 - P4 Non-Case Exclusion Hardening
+
+### Completed
+- Expanded P4 classification fixtures from simple type accuracy to bucket-level outcomes: `NON_CASE`, `CASE_RELATED`, and `UNCERTAIN`.
+- Added high-risk non-case fixtures for school recommendation/application notices, shopping/order notifications, and account verification messages.
+- Added explicit case-related coverage for collaboration invites, quote inquiries, deadline/material risk, confirmation/contract messages, and delivery/revision messages.
+- Added ambiguous-message coverage for short cooperation/open-ended replies that should stay uncertain without thread context.
+- Strengthened existing classifier rules and Gmail triage for school/application notices and order/transaction notifications before revision/quote rules run.
+
+### Verification
+- `npm run classification:p4 --workspace @casebee/api`: passed, 14/14, accuracy `1.000`.
+- P4 non-case false case rate: `0.000`.
+- P4 case-related miss rate: `0.000`.
+- P4 uncertain over-create rate: `0.000`.
+- `npm run accuracy`: passed; development full overall `0.918`, classification `1.000`, thread context RAG-on `1.000`.
+- `npm run type-check`: passed.
+- `npm run build`: passed.
+- `npm run smoke`: passed.
+
+## 2026-10-12 - P5 Weak-Field Extraction Optimization
+
+### Completed
+- Added a P5 comparison harness for the three weakest extraction fields: `intent`, `nextAction`, and `missingFields`.
+- Compared A/B/C explicitly:
+  - A: legacy/current extraction profile.
+  - B: `p5_event_decision` profile using semantic event decisions inside the existing extraction call path.
+  - C: LangChain is reported as `not_configured` because the repo has no LangChain dependency or chain implementation yet.
+- Kept model-call count unchanged; the P5 comparison reports `modelCallsAdded: 0`.
+- Updated extraction rules so intent is not inferred from budget keywords alone, next actions require an active explicit/stage-backed action, and missing fields are derived from the current case event.
+- Tightened required-material detection so project names like `Logo + 名片設計` do not become missing client materials when the requested action is actually contract-related.
+- Updated the extraction system prompt to express the same three-stage weak-field decision order for AI providers.
+
+### Verification
+- `npm run comparison:p5 --workspace @casebee/api`: passed.
+- P5 development weak-field average: A `0.720` -> B `1.000`.
+- P5 holdout weak-field average: A `0.750` -> B `1.000`.
+- `npm run accuracy --workspace @casebee/api`: passed; development, holdout, and thread context full overall `1.000`.
+- `npm run classification:p4 --workspace @casebee/api`: passed, 14/14, bucket accuracy `1.000`.
+- `npm run type-check`: passed.
+
 ## 2026-08-04 - Documentation Baseline
 
 ### Completed

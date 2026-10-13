@@ -99,6 +99,14 @@ function triageGmailMessage(input: {from: string; subject: string; text: string}
     return {shouldImport: false, category: 'verification_code', reason: '驗證碼或安全通知，不建立案件'};
   }
 
+  if (/(訂單|出貨|配送|收件資料|會員中心|付款完成|交易明細|發票|物流|tracking number|order confirmation)/i.test(combined)) {
+    return {shouldImport: false, category: 'automated_notification', reason: '訂單或交易通知，不建立案件'};
+  }
+
+  if (/(推薦信|申請資料|申請文件|補件|教務處|招生|研究所申請|入學申請|admission|application portal)/i.test(combined)) {
+    return {shouldImport: false, category: 'announcement', reason: '學校申請或行政通知，不建立案件'};
+  }
+
   if (senderEmail.includes('calendar-notification@google.com') || includesAny(combined, ['google calendar', 'google 日曆', '邀請：', 'invitation to', 'calendar event'])) {
     return {shouldImport: false, category: 'calendar_invite', reason: '行事曆邀請或會議通知，不建立案件'};
   }

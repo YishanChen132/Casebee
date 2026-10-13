@@ -262,7 +262,9 @@ export interface ThreadAwareExtractionResult {
   extractedFields: Partial<AiExtraction>;
   inheritedFields: Partial<AiExtraction>;
   changedFields: Partial<AiExtraction>;
+  clearedFields: Partial<AiExtraction>;
   conflictingFields: ThreadFieldConflict[];
+  fieldSources: Partial<Record<ThreadAwareField, 'extracted' | 'inherited' | 'changed' | 'conflict' | 'cleared'>>;
   needsHumanReview: boolean;
   threadSummary: string | null;
   existingCaseId: string | null;
@@ -319,6 +321,7 @@ export interface RagExample {
   quoteRangeMax: number | null;
   successPattern: string | null;
   score: number;
+  scoreBreakdown?: Record<string, number>;
 }
 
 export interface CreateRagExampleInput {
