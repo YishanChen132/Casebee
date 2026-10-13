@@ -1,23 +1,20 @@
 import {useEffect, useState} from 'react';
+import {missingFieldDisplayLabels} from '@casebee/shared';
 import type {AiReviewDetail, AiReviewItem, BusinessProfile, BusinessRiskScore, CaseDetail, MessageEvent, MessageReplyStatusHistoryItem, Platform, ReplyStatus} from '@casebee/shared';
 import {enrichBusinessRisk, excludeMessage, getCaseDetail, getGmailAuthUrl, getGmailStatus, getMessageReplyStatusHistory, getMessageReview, getMessages, importMessage, pollGmail, reanalyzeMessage, resolveReview, updateMessageReplyStatus, type ImportPipelineResult} from '../services/api';
 import type {NavigateToPage} from '../App';
 
 const fieldLabels: Record<string, string> = {
+  ...missingFieldDisplayLabels,
   clientName: '客戶名稱',
   customerName: '客戶名稱',
   projectItem: '專案項目',
-  project_item: '專案項目',
   quoteAmount: '預算 / 報價金額',
-  quote_amount: '預算 / 報價金額',
   expectedDeadline: '預期到期時間',
-  expected_deadline: '預期到期時間',
   intent: '需求目的',
   contactMethod: '聯絡方式',
   contact_method: '聯絡方式',
   reference: '參考資料',
-  scope: '工作範圍',
-  deliverables: '交付項目',
   inheritedFields: '沿用欄位',
   changedFields: '變更欄位',
   conflictingFields: '衝突欄位',
@@ -112,6 +109,7 @@ export function MessagesPage({onNavigate, targetMessageId}: MessagesPageProps) {
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<Platform | 'All'>('All');
   const [draftReply, setDraftReply] = useState('');
+  const [copyFeedback, setCopyFeedback] = useState(false);
   const [gmailAssistantStatus, setGmailAssistantStatus] = useState('Gmail 尚未同步。');
   const [gmailConfigured, setGmailConfigured] = useState(false);
   const [gmailConnected, setGmailConnected] = useState(false);
@@ -188,6 +186,30 @@ export function MessagesPage({onNavigate, targetMessageId}: MessagesPageProps) {
   });
 
   const selectedTaxId = selectedMessage?.text.match(/\b\d{8}\b/)?.[0];
+
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+const refreshAll = async () => {
+  setIsRefreshing(true);
+  try {
+    const latest = await getMessages();
+    setMessages(latest);
+    setLastResult(null);
+    const current = latest.find((message) => message.id === selectedMessage?.id) ?? selectedMessage ?? latest[0];
+    if (current?.caseId) {
+      setSelectedCaseDetail(await getCaseDetail(current.caseId));
+    }
+    if (current) {
+      const [detail, history] = await Promise.all([getMessageReview(current.id), getMessageReplyStatusHistory(current.id)]);
+      setReviewDetail(detail);
+      setReplyStatusHistory(history);
+    }
+  } catch {
+    // 失敗時保留目前畫面
+  } finally {
+    setIsRefreshing(false);
+  }
+};
 
   useEffect(() => {
     if (!selectedMessage?.caseId) {
@@ -347,7 +369,7 @@ export function MessagesPage({onNavigate, targetMessageId}: MessagesPageProps) {
     setReanalyzeStatus('正在用新版擷取流程重新分析...');
     try {
       const result = await reanalyzeMessage(selectedMessage.id);
-      setLastResult(result.case ? result : null);
+      setLastResult(result.case ? {...result, alerts: result.caseDetail?.alerts ?? result.alerts} : null);
       setSelectedCaseDetail(result.caseDetail);
       setMessages(await getMessages());
       setReanalyzeStatus(`重新分析完成：${result.extraction.projectItem ?? '未擷取專案'}，模型 ${result.modelName}`);
@@ -363,8 +385,10 @@ export function MessagesPage({onNavigate, targetMessageId}: MessagesPageProps) {
     const [nextMessages, nextReview] = await Promise.all([getMessages(), getMessageReview(selectedMessage.id)]);
     setMessages(nextMessages);
     setReviewDetail(nextReview);
-    if (selectedMessage.caseId) {
-      setSelectedCaseDetail(await getCaseDetail(selectedMessage.caseId));
+        if (selectedMessage.caseId) {
+      const nextDetail = await getCaseDetail(selectedMessage.caseId);
+      setSelectedCaseDetail(nextDetail);
+      setLastResult((current) => (current ? {...current, case: nextDetail.case, alerts: nextDetail.alerts} : current));
     }
   };
 
@@ -438,6 +462,9 @@ export function MessagesPage({onNavigate, targetMessageId}: MessagesPageProps) {
               <p>{filteredMessages.length} 則訊息</p>
             </div>
             <span>即時</span>
+            <button type="button" className="messages-filter-tabs__button" onClick={refreshAll} disabled={isRefreshing}>
+    {isRefreshing ? '更新中...' : '重新整理'}
+  </button>
           </div>
 
           <div className="messages-filter-tabs" role="tablist" aria-label="訊息平台篩選">
@@ -518,11 +545,11 @@ export function MessagesPage({onNavigate, targetMessageId}: MessagesPageProps) {
               ) : null}
               <div className="entity-grid">
                 <span>客戶名稱</span><strong>{visibleExtraction.clientName ?? '未擷取'}</strong>
-                <span>專案項目</span><strong>{visibleExtraction.projectItem ?? '未擷取'}</strong>
-                <span>預算 / 報價金額</span><strong>{visibleExtraction.quoteAmount ? `$${visibleExtraction.quoteAmount.toLocaleString()}` : '未擷取'}</strong>
-                <span>預期到期時間</span><strong>{visibleExtraction.expectedDeadline ?? '未擷取'}</strong>
+                <span>專案項目</span><strong>{visibleCase?.projectItem ?? visibleExtraction.projectItem ?? '未擷取'}</strong>
+                <span>預算 / 報價金額</span><strong>{(visibleCase?.quoteAmount ?? visibleExtraction.quoteAmount) ? `$${(visibleCase?.quoteAmount ?? visibleExtraction.quoteAmount)!.toLocaleString()}` : '未擷取'}</strong>
+                <span>預期到期時間</span><strong>{visibleCase?.expectedDeadline ?? visibleExtraction.expectedDeadline ?? '未擷取'}</strong>
                 <span>需求目的</span><strong>{visibleExtraction.intent}</strong>
-                <span>案件狀態</span><strong>{visibleExtraction.caseStatus}</strong>
+                <span>案件狀態</span><strong>{visibleCase?.status ?? visibleExtraction.caseStatus}</strong>
                 <span>缺少資料</span><strong>{visibleExtraction.missingFields.length > 0 ? visibleExtraction.missingFields.map(formatField).join('、') : '無'}</strong>
               </div>
               <span className="analysis-label">案件摘要</span>
@@ -690,15 +717,28 @@ export function MessagesPage({onNavigate, targetMessageId}: MessagesPageProps) {
           </article>
 
           <article className="page-card message-reply-card">
-            <div className="messages-panel-heading">
-              <div>
-                <h2>AI 回覆草稿</h2>
-                <p>可直接編輯後複製使用</p>
-              </div>
-            </div>
-            <textarea value={draftReply} onChange={(event) => setDraftReply(event.target.value)} placeholder="匯入訊息後會產生建議回覆" />
-            <button type="button" onClick={() => void navigator.clipboard?.writeText(draftReply)}>複製回覆</button>
-          </article>
+  <div className="messages-panel-heading">
+    <div>
+      <h2>AI 回覆草稿</h2>
+      <p>可直接編輯後複製使用</p>
+    </div>
+  </div>
+  <textarea value={draftReply} onChange={(event) => setDraftReply(event.target.value)} placeholder="匯入訊息後會產生建議回覆" />
+  <div className="message-reply-card__actions">
+    <button
+      type="button"
+      onClick={() => {
+        void navigator.clipboard?.writeText(draftReply).then(() => {
+          setCopyFeedback(true);
+          setTimeout(() => setCopyFeedback(false), 2000);
+        });
+      }}
+    >
+      複製回覆
+    </button>
+    {copyFeedback ? <span className="copy-toast">已複製到剪貼簿</span> : null}
+  </div>
+</article>
         </section>
       </section>
     </div>

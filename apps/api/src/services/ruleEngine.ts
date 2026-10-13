@@ -1,9 +1,9 @@
 import {missingFieldDefinitions} from '@casebee/shared';
 import type {AiExtraction, Alert, CaseRecord} from '@casebee/shared';
-import {createAlert, findOpenAlertByCaseAndType, syncMissingFieldAlerts} from '../repositories/alertsRepository.js';
 import {findAllCases, updateCaseMissingFields, updateCaseRisk} from '../repositories/casesRepository.js';
 import {findLatestMessageByCaseId} from '../repositories/messagesRepository.js';
 import {computeStageAwareMissingFields} from './missingFieldService.js';
+import {createAlert, findOpenAlertByCaseAndType, resolveOpenAlertsByCaseAndType, syncMissingFieldAlerts} from '../repositories/alertsRepository.js';
 
 const missingFieldLabels: Record<string, string> = {
   client_name: '客戶名稱',
@@ -33,6 +33,10 @@ function getReplyOverdueThresholdHours() {
   return Number.isFinite(thresholdHours) ? thresholdHours : 24;
 }
 
+async function createAlertOnce(input: Parameters<typeof createAlert>[0]) {
+  return (await findOpenAlertByCaseAndType(input.caseId, input.type)) ?? createAlert(input);
+}
+
 function includesAny(text: string, keywords: string[]) {
   return keywords.some((keyword) => text.includes(keyword));
 }
@@ -59,7 +63,7 @@ export async function runRules(caseRecord: CaseRecord, extraction: AiExtraction)
 
   if (extraction.expectedDeadline && /(今天|明天|後天|本週)/.test(extraction.expectedDeadline)) {
     alerts.push(
-      await createAlert({
+      await createAlertOnce({
         caseId: caseRecord.id,
         type: 'deadline_risk',
         title: '交期風險',
@@ -71,7 +75,7 @@ export async function runRules(caseRecord: CaseRecord, extraction: AiExtraction)
 
   if (includesAny(context, ['順便', '追加', '加做', '改成', '多做', '修改', '調整'])) {
     alerts.push(
-      await createAlert({
+      await createAlertOnce({
         caseId: caseRecord.id,
         type: 'scope_change',
         title: '需求變更偵測',
@@ -83,7 +87,7 @@ export async function runRules(caseRecord: CaseRecord, extraction: AiExtraction)
 
   if (extraction.quoteAmount !== null && extraction.quoteAmount < 10000 && includesAny(context, ['影片', 'Reels', '網站', 'Logo', '產品攝影'])) {
     alerts.push(
-      await createAlert({
+      await createAlertOnce({
         caseId: caseRecord.id,
         type: 'low_budget',
         title: '預算偏低',
@@ -95,7 +99,7 @@ export async function runRules(caseRecord: CaseRecord, extraction: AiExtraction)
 
   if (includesAny(context, ['急', '馬上', '今天', '明天', '後天', '來不及'])) {
     alerts.push(
-      await createAlert({
+      await createAlertOnce({
         caseId: caseRecord.id,
         type: 'urgent_reply',
         title: '需優先回覆',
@@ -107,7 +111,7 @@ export async function runRules(caseRecord: CaseRecord, extraction: AiExtraction)
 
   if (missingFields.length >= 2) {
     alerts.push(
-      await createAlert({
+      await createAlertOnce({
         caseId: caseRecord.id,
         type: 'needs_clarification',
         title: '需先釐清需求',
@@ -115,6 +119,9 @@ export async function runRules(caseRecord: CaseRecord, extraction: AiExtraction)
         severity: 'warning',
       }),
     );
+  }
+  else {
+    await resolveOpenAlertsByCaseAndType(caseRecord.id, 'needs_clarification');
   }
 
   if (alerts.some((alert) => alert.severity === 'danger')) {
@@ -155,7 +162,7 @@ export async function runReplyOverdueRules() {
     }
 
     alerts.push(
-      await createAlert({
+      await createAlertOnce({
         caseId: item.id,
         type: 'reply_overdue',
         title: '客戶訊息尚未回覆',

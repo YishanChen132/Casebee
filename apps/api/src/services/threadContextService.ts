@@ -1,8 +1,29 @@
 import type {AiExtraction, CaseRecord, MessageEvent, ThreadAwareExtractionResult, ThreadAwareField, ThreadFieldConflict} from '@casebee/shared';
 import {analyzeMessage} from './aiService.js';
+import {buildSuggestedReply, buildSummary} from './extractionService.js';
+import {findSimilarCases} from './ragService.js';
 
 const comparableFields: ThreadAwareField[] = ['clientName', 'projectItem', 'quoteAmount', 'expectedDeadline', 'submissionDeadline', 'publishDeadline'];
 const criticalFields = new Set<ThreadAwareField>(['projectItem', 'quoteAmount', 'expectedDeadline', 'submissionDeadline', 'publishDeadline']);
+
+
+const conflictFieldLabels: Partial<Record<ThreadAwareField, string>> = {projectItem: '專案項目', quoteAmount: '預算', expectedDeadline: '交期', submissionDeadline: '交稿期限', publishDeadline: '上線期限'};
+
+function formatConflictValue(field: ThreadAwareField, value: unknown) {
+  return field === 'quoteAmount' && typeof value === 'number' ? `NT$ ${value.toLocaleString('zh-TW')}` : String(value);
+}
+
+function buildConflictReply(conflicts: ThreadFieldConflict[]) {
+  const parts = conflicts
+    .map((conflict) => {
+      if (conflict.field === 'projectItem' && conflict.reason === 'Customer wants to add a new item.') {
+        return `想新增項目，調整後專案內容為 ${conflict.extracted}`;
+      }
+      return `${conflictFieldLabels[conflict.field] ?? conflict.field}調整為 ${formatConflictValue(conflict.field, conflict.extracted)}（原為 ${formatConflictValue(conflict.field, conflict.existing)}）`;
+    })
+    .join('、');
+  return `您好，收到。您提到${parts}。我先確認調整後的排程與報價是否可行，確認後回覆您。`;
+}
 
 function extractionFromCase(existingCase: CaseRecord): AiExtraction {
   return {
@@ -58,7 +79,7 @@ function mergeMissingFields(extraction: AiExtraction) {
   if (extraction.submissionDeadline) missing.delete('submission_deadline');
   if (extraction.publishDeadline) missing.delete('publish_deadline');
   if (extraction.nextAction) missing.delete('next_action');
-  if (extraction.requiredMaterials.length > 0) missing.delete('required_materials');
+  if (extraction.requiredMaterials.length > 0 || extraction.providedMaterials.length > 0) missing.delete('required_materials');
   return Array.from(missing);
 }
 
@@ -134,7 +155,8 @@ export async function analyzeThreadAwareMessage(input: {senderName: string; text
       changedFields[field] = currentValue as never;
       fieldSources[field] = 'changed';
       if (criticalFields.has(field)) {
-        conflictingFields.push({field, existing: existingValue, extracted: currentValue, reason: 'Current message conflicts with existing case state.'});
+        const isAddition = field === 'projectItem' && /加做|新增|順便|另外|多做|再加|追加|也想/.test(input.text);
+        conflictingFields.push({field, existing: existingValue, extracted: isAddition ? `${existingValue} + ${currentValue}` : currentValue, reason: isAddition ? 'Customer wants to add a new item.' : 'Current message conflicts with existing case state.'});
         finalExtraction[field] = existingValue as never;
         fieldSources[field] = 'conflict';
       }
@@ -168,6 +190,10 @@ export async function analyzeThreadAwareMessage(input: {senderName: string; text
     } else if (hasValue(currentExtraction.nextAction)) {
       fieldSources.nextAction = compatibleValue('nextAction', existingExtraction.nextAction, currentExtraction.nextAction) ? 'inherited' : 'changed';
     }
+    if (currentExtraction.providedMaterials.length === 0 && existingExtraction.providedMaterials.length > 0) {
+      finalExtraction.providedMaterials = existingExtraction.providedMaterials;
+      inheritedFields.providedMaterials = existingExtraction.providedMaterials;
+    }
 
     if (isTerminalStatus(currentExtraction) && existingExtraction.requiredMaterials.length > 0) {
       finalExtraction.requiredMaterials = [];
@@ -192,6 +218,16 @@ export async function analyzeThreadAwareMessage(input: {senderName: string; text
   finalExtraction.summary = input.existingCase
     ? `${currentExtraction.summary} Thread context: ${conflictingFields.length > 0 ? '偵測到與既有案件欄位衝突，需人工確認。' : '已沿用同一 Gmail thread 的既有案件資料。'}`
     : currentExtraction.summary;
+
+  if (input.existingCase) {
+    const similarCases = await findSimilarCases(finalExtraction);
+    finalExtraction.summary = `${buildSummary({senderName: finalExtraction.clientName ?? '', text: input.text, projectItem: finalExtraction.projectItem, quoteAmount: finalExtraction.quoteAmount, expectedDeadline: finalExtraction.expectedDeadline, intent: currentExtraction.intent, missingFields: finalExtraction.missingFields, similarCases})} 最新訊息：「${input.text.replace(/\s+/g, ' ').slice(0, 80)}」 Thread context: ${conflictingFields.length > 0 ? '偵測到與既有案件欄位衝突，需人工確認。' : '已沿用同一 Gmail thread 的既有案件資料。'}`;
+  if (conflictingFields.length > 0) {
+      finalExtraction.suggestedReply = buildConflictReply(conflictingFields);
+  }else {
+      finalExtraction.suggestedReply = buildSuggestedReply({clientName: finalExtraction.clientName ?? '', text: input.text, intent: currentExtraction.intent, projectItem: finalExtraction.projectItem, quoteAmount: finalExtraction.quoteAmount, expectedDeadline: finalExtraction.expectedDeadline, missingFields: finalExtraction.missingFields, similarCases});
+    }
+  }
 
   const result: ThreadAwareExtractionResult = {
       extraction: finalExtraction,

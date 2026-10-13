@@ -106,6 +106,14 @@ export async function resolveReviewItem(id: string, action: 'apply' | 'keep' | '
     [`review-history-${randomUUID()}`, id, row.message_id, caseId, field, action, jsonValue(previousValue), jsonValue(suggestedValue), jsonValue(finalValue)],
   );
 
+    const alertId = row.alert_id ? String(row.alert_id) : null;
+  if (alertId) {
+    const pendingForAlert = await pool.query('SELECT COUNT(*)::int AS count FROM ai_review_items WHERE alert_id = $1 AND status = $2', [alertId, 'pending']);
+    if (Number(pendingForAlert.rows[0]?.count ?? 0) === 0) {
+      await pool.query('UPDATE alerts SET resolved_at = COALESCE(resolved_at, now()) WHERE id = $1 AND resolved_at IS NULL', [alertId]);
+    }
+  }
+  
   const pending = await pool.query('SELECT COUNT(*)::int AS count FROM ai_review_items WHERE case_id = $1 AND status = $2', [caseId, 'pending']);
   if (Number(pending.rows[0]?.count ?? 0) === 0) {
     await pool.query("UPDATE alerts SET resolved_at = COALESCE(resolved_at, now()) WHERE case_id = $1 AND type = 'needs_human_review' AND resolved_at IS NULL", [caseId]);

@@ -52,6 +52,7 @@ export async function findLatestCaseIdByThreadId(threadId: string): Promise<stri
      WHERE messages.thread_id = $1
        AND messages.excluded_at IS NULL
        AND cases.excluded_at IS NULL
+       AND cases.status NOT IN ('已完成', '已流失')
      ORDER BY messages.timestamp DESC, messages.created_at DESC
      LIMIT 1`,
     [threadId],

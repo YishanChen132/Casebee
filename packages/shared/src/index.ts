@@ -66,6 +66,23 @@ export const missingFieldDefinitions: Record<MissingFieldName, string> = {
   next_action: 'The next action is unclear, such as whether to quote, schedule, request material, or close the case.',
 };
 
+export const missingFieldDisplayLabels: Record<MissingFieldName, string> = {
+  client_name: '客戶名稱',
+  project_item: '專案項目',
+  deliverables: '交付項目',
+  scope: '工作範圍',
+  quote_amount: '預算 / 報價金額',
+  expected_deadline: '預期到期時間',
+  usage_rights: '使用授權',
+  revision_scope: '修改/審稿範圍',
+  contract: '合約確認',
+  payment_terms: '付款條件',
+  required_materials: '必要素材',
+  submission_deadline: '交稿期限',
+  publish_deadline: '發布 / 上線期限',
+  next_action: '下一步',
+};
+
 export const missingFieldOrder: MissingFieldName[] = [
   'client_name',
   'project_item',

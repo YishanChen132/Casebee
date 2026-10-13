@@ -13,6 +13,7 @@ import {enrichBusinessRisk, getBusinessRiskSummary} from './services/businessRis
 import {importDemoMessages} from './services/demoImportService.js';
 import {createGmailAuthUrl, getGmailStatus, handleGmailCallback, pollGmailMessages} from './services/gmailService.js';
 import {startGmailPollingScheduler} from './services/gmailPollingScheduler.js';
+import {handleLineWebhookEvents, verifyLineSignature} from './services/lineService.js';
 import {importMessage} from './services/messageImportService.js';
 import {reanalyzeMessage} from './services/messageReanalysisService.js';
 import {getRuleScheduleStatus, runReplyOverdueRules} from './services/ruleEngine.js';
@@ -39,7 +40,11 @@ function isCreateRagExampleInput(payload: Partial<CreateRagExampleInput>): paylo
 }
 
 app.use(cors({origin: process.env.FRONTEND_URL ?? 'http://localhost:5173'}));
-app.use(express.json());
+app.use(express.json({
+  verify: (request, _response, buffer) => {
+    (request as express.Request & {rawBody?: Buffer}).rawBody = Buffer.from(buffer);
+  },
+}));
 
 app.get('/api/health', async (_request, response) => {
   try {
@@ -284,7 +289,21 @@ app.post('/api/messages/import', async (request, response) => {
 });
 
 app.post('/api/webhooks/line', (request, response) => {
-  response.json({ok: true, receivedEvents: Array.isArray(request.body?.events) ? request.body.events.length : 0});
+  const rawBody = (request as express.Request & {rawBody?: Buffer}).rawBody ?? Buffer.from(JSON.stringify(request.body ?? {}));
+  const signature = request.header('x-line-signature');
+
+  if (!verifyLineSignature(rawBody, signature)) {
+    response.status(401).json({error: {message: 'Invalid LINE signature'}});
+    return;
+  }
+
+  const events = Array.isArray(request.body?.events) ? request.body.events : [];
+  // Respond immediately so LINE does not retry/time out; process events in the background.
+  response.json({ok: true, receivedEvents: events.length});
+
+  handleLineWebhookEvents(events).catch((error) => {
+    console.error('Failed to process LINE webhook events', error);
+  });
 });
 
 app.post('/api/demo/import', async (_request, response) => {

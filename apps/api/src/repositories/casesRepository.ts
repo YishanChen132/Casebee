@@ -80,7 +80,7 @@ export async function findCaseDetailById(id: string): Promise<CaseDetail | null>
 
   const [messagesResult, alertsResult, aiExtractionsResult, businessProfile, businessRiskScore] = await Promise.all([
     pool.query('SELECT * FROM messages WHERE case_id = $1 AND excluded_at IS NULL ORDER BY timestamp DESC, created_at DESC', [id]),
-    pool.query('SELECT * FROM alerts WHERE case_id = $1 ORDER BY created_at DESC', [id]),
+    pool.query('SELECT * FROM alerts WHERE case_id = $1 AND resolved_at IS NULL ORDER BY created_at DESC', [id]),
     pool.query(
       `SELECT ai_extractions.*
        FROM ai_extractions

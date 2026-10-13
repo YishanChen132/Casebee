@@ -1,4 +1,5 @@
 import {useEffect, useState} from 'react';
+import {missingFieldDisplayLabels} from '@casebee/shared';
 import type {CaseDetail, CaseRecord, CaseStatus} from '@casebee/shared';
 import {enrichBusinessRisk, getCaseDetail, getCases, resolveAlert, updateCase, updateCaseStatus} from '../services/api';
 import type {NavigateToPage} from '../App';
@@ -14,24 +15,16 @@ const phaseColumns: Array<{title: string; statuses: CaseStatus[]; dropStatus: Ca
 ];
 
 const missingFieldLabels: Record<string, string> = {
+  ...missingFieldDisplayLabels,
   clientName: '客戶名稱',
   customerName: '客戶名稱',
   projectItem: '專案項目',
-  project_item: '專案項目',
   quoteAmount: '預算 / 報價金額',
-  quote_amount: '預算 / 報價金額',
   expectedDeadline: '預期到期時間',
-  expected_deadline: '預期到期時間',
   intent: '需求目的',
   contactMethod: '聯絡方式',
   contact_method: '聯絡方式',
   reference: '參考資料',
-  required_materials: '必要素材',
-  submission_deadline: '交稿期限',
-  publish_deadline: '發布 / 上線期限',
-  next_action: '下一步',
-  scope: '工作範圍',
-  deliverables: '交付項目',
   platform: '聯絡平台',
 };
 

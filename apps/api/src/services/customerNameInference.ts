@@ -34,11 +34,16 @@ function extractOrganizationFromText(text: string) {
     /([^\n\r，,。]{2,20}(?:股份有限公司|有限公司|建設|科技|行銷|設計|工作室|實驗室|基金會|協會|學校|大學|小組|團隊))/,
   ];
 
-  for (const pattern of patterns) {
+    for (const pattern of patterns) {
     const match = text.match(pattern);
     if (match?.[1]) {
       const candidate = cleanCandidateName(match[1]);
-      if (!/^(我們|我想|想|需要|您好|不好意思|Logo|Reels|網站|官網|IG|社群|產品攝影|包裝|簡報|DM)/i.test(candidate)) {
+      // Reject candidates that look like a sentence fragment rather than a name:
+      // contains a conversational/request phrase anywhere (not just at the start),
+      // or has more than one space (real brand/company names are compact).
+      const looksLikeSentence = /(你好|您好|我們|我想|想問|想要|需要|不好意思|請問|麻煩|可以|希望|Logo|Reels|網站|官網|IG|社群|產品攝影|包裝|簡報|DM)/i.test(candidate)
+        || (candidate.match(/\s/g)?.length ?? 0) > 1;
+      if (!looksLikeSentence) {
         return candidate;
       }
     }

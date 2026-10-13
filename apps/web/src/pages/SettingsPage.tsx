@@ -206,13 +206,13 @@ export function SettingsPage() {
               <button type="button" className="integration-actions__secondary" onClick={handleGmailPoll} disabled={!gmailConnected}>同步 Gmail</button>
             </div>
           </div>
-          <div className="integration-row integration-row--disabled">
-            <div>
-              <strong>LINE Messaging API</strong>
-              <p>Webhook 架構已保留，正式 token 設定後再啟用。</p>
-              <small>需要 LINE_CHANNEL_SECRET 與 LINE_CHANNEL_ACCESS_TOKEN。</small>
-            </div>
-            <span>待設定</span>
+          <div className="integration-row">
+          <div>
+            <strong>LINE Messaging API</strong>
+            <p>已串接：收到的 LINE 訊息會自動進入 AI 建案流程，回覆目前由人工在 LINE 官方帳號後台送出。</p>
+            <small>Webhook URL：{'{API網址}'}/api/webhooks/line（使用 ngrok 時，網址每次重開都會變，要同步更新 LINE Developers 的 Webhook URL）。</small>
+          </div>
+            <span>已串接</span>
           </div>
         </article>
         <article className="page-card knowledge-card">
