@@ -286,3 +286,51 @@
   display: grid;
   gap: 2px;
 }
+
+
+/* ===== AI 擷取的名稱 ===== */
+.registry-names {
+  display: grid;
+  gap: 8px;
+}
+
+.registry-names__label {
+  color: var(--registry-muted);
+  font-size: 13px;
+}
+
+.registry-names__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.registry-names__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--registry-border);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--registry-text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.registry-names__chip small {
+  color: var(--registry-accent);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.registry-names__chip:hover:not(:disabled) {
+  border-color: var(--registry-accent);
+  background: #f4fbf7;
+}
+
+.registry-names__chip:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

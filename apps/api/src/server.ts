@@ -11,6 +11,7 @@ import {createRagExample, deactivateRagExample, findAllRagExamples} from './repo
 import {findReviewHistoryByMessageId, findReviewItemsByMessageId, resolveReviewItem} from './repositories/aiReviewRepository.js';
 import {enrichBusinessRisk, getBusinessRiskSummary} from './services/businessRiskService.js';
 import {getRegistryBackground, screenRegistry} from './services/gcisBusinessRegistryProvider.js';
+import {extractEntityNames} from './services/entityNameExtractor.js';
 import {importDemoMessages} from './services/demoImportService.js';
 import {createGmailAuthUrl, getGmailStatus, handleGmailCallback, pollGmailMessages} from './services/gmailService.js';
 import {startGmailPollingScheduler} from './services/gmailPollingScheduler.js';
@@ -413,6 +414,12 @@ app.post('/api/business/screen', async (request, response) => {
   } catch (error) {
     response.status(500).json({error: {message: error instanceof Error ? error.message : 'Failed to screen registry'}});
   }
+});
+
+app.post('/api/business/extract-names', (request, response) => {
+  const payload = request.body as {text?: unknown};
+  const text = typeof payload.text === 'string' ? payload.text.slice(0, 5000) : '';
+  response.json({data: {names: extractEntityNames(text)}});
 });
 
 app.post('/api/business/background', async (request, response) => {

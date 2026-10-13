@@ -1,7 +1,8 @@
 import {useEffect, useRef, useState} from 'react';
 import {missingFieldDisplayLabels} from '@casebee/shared';
 import type {AiReviewDetail, AiReviewItem, BusinessProfile, BusinessRiskScore, CaseDetail, MessageEvent, MessageReplyStatusHistoryItem, Platform, RegistryBackgroundCard,RegistrySearchResult, ReplyStatus} from '@casebee/shared';
-import {getRegistryBackground,enrichBusinessRisk, excludeMessage, getCaseDetail, getGmailAuthUrl, getGmailStatus, getMessageReplyStatusHistory, getMessageReview, getMessages, importMessage, pollGmail, reanalyzeMessage, resolveReview,screenRegistry,  updateMessageReplyStatus, type ImportPipelineResult} from '../services/api';
+import {extractEntityNames,getRegistryBackground,enrichBusinessRisk, excludeMessage, getCaseDetail, getGmailAuthUrl, getGmailStatus, getMessageReplyStatusHistory, getMessageReview, getMessages, importMessage, pollGmail, reanalyzeMessage, resolveReview,screenRegistry,  updateMessageReplyStatus, type ImportPipelineResult} from '../services/api';
+import type {ExtractedEntityName} from '../services/api';
 import type {NavigateToPage} from '../App';
 import '../registry-card.css';
 
@@ -138,6 +139,7 @@ export function MessagesPage({onNavigate, targetMessageId}: MessagesPageProps) {
   const [registryStatus, setRegistryStatus] = useState('');
   const [isScreening, setIsScreening] = useState(false);
   const registryRequestId = useRef(0);
+  const [entityNames, setEntityNames] = useState<ExtractedEntityName[]>([]);
   const [backgroundCard, setBackgroundCard] = useState<RegistryBackgroundCard | null>(null);
   const [backgroundStatus, setBackgroundStatus] = useState('');
   const [loadingBackgroundTaxId, setLoadingBackgroundTaxId] = useState<string | null>(null);
@@ -309,6 +311,29 @@ const refreshAll = async () => {
     };
   }, [selectedMessage?.id, selectedTaxId, visibleExtraction?.clientName, selectedMessage?.senderName]);
 
+
+  useEffect(() => {
+    if (!selectedMessage) {
+      setEntityNames([]);
+      return;
+    }
+    let cancelled = false;
+    const conversationText = messages
+      .filter((message) => message.threadId && message.threadId === selectedMessage.threadId)
+      .map((message) => message.text)
+      .join('\n') || selectedMessage.text;
+    extractEntityNames(conversationText)
+      .then((result) => {
+        if (!cancelled) setEntityNames(result.names);
+      })
+      .catch(() => {
+        if (!cancelled) setEntityNames([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedMessage?.id, selectedMessage?.threadId, selectedMessage?.text]);
+
   useEffect(() => {
     registryRequestId.current += 1;
     backgroundRequestId.current += 1;
@@ -470,8 +495,8 @@ const refreshAll = async () => {
       }
     }
   };
-    const handleScreenRegistry = async () => {
-    const keyword = registryKeyword.trim();
+    const handleScreenRegistry = async (overrideKeyword?: string) => {
+    const keyword = (overrideKeyword ?? registryKeyword).trim();
     const taxId = registryTaxId.trim();
 
     if (!keyword && !taxId) {
@@ -766,6 +791,30 @@ const refreshAll = async () => {
                 <span className="registry-card__badge">經濟部商工登記</span>
               </header>
 
+              {entityNames.length > 0 ? (
+                <div className="registry-names">
+                  <span className="registry-names__label">AI 從對話中找到的名稱，點一下就查：</span>
+                  <div className="registry-names__list">
+                    {entityNames.map((item) => (
+                      <button
+                        key={item.name}
+                        type="button"
+                        className="registry-names__chip"
+                        title={item.reason}
+                        disabled={isScreening}
+                        onClick={() => {
+                          setRegistryKeyword(item.name);
+                          handleScreenRegistry(item.name);
+                        }}
+                      >
+                        {item.name}
+                        <small>{item.kind === 'company' ? '公司' : '品牌'}</small>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
               <div className="registry-card__form">
                 <label className="registry-field">
                   <span>統一編號</span>
@@ -775,7 +824,7 @@ const refreshAll = async () => {
                   <span>公司名稱關鍵字</span>
                   <input value={registryKeyword} onChange={(event) => setRegistryKeyword(event.target.value)} placeholder="例如 品喬室內裝修設計" />
                 </label>
-                <button type="button" className="registry-card__submit" onClick={handleScreenRegistry} disabled={isScreening}>
+                <button type="button" className="registry-card__submit" onClick={() => handleScreenRegistry()} disabled={isScreening}>
                   {isScreening ? '查詢中...' : '查詢登記資料'}
                 </button>
               </div>

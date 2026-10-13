@@ -184,3 +184,9 @@ export function screenRegistry(input: {taxId?: string; keyword?: string}) {
 export function getRegistryBackground(taxId: string) {
   return post<RegistryBackgroundCard>('/api/business/background', {taxId});
 }
+
+export type ExtractedEntityName = {name: string; kind: 'company' | 'brand'; reason: string};
+
+export function extractEntityNames(text: string) {
+  return post<{names: ExtractedEntityName[]}>('/api/business/extract-names', {text});
+}
