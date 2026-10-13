@@ -230,3 +230,59 @@
   line-height: 1.5;
   color: var(--registry-muted);
 }
+
+/* ===== 合作對象背景卡 ===== */
+.registry-select {
+  justify-self: start;
+  margin-top: 8px;
+  padding: 6px 12px;
+  border: 1px solid var(--registry-accent);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--registry-accent);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.registry-select:hover:not(:disabled) {
+  background: var(--registry-accent);
+  color: #ffffff;
+}
+
+.registry-select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.registry-background {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--registry-accent);
+  border-radius: 12px;
+  background: #f4fbf7;
+}
+
+.registry-background__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.registry-background__flag {
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: #fff4e5;
+  color: #b45309;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.registry-background__items {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 2px;
+}

@@ -1,7 +1,7 @@
 import {useEffect, useRef, useState} from 'react';
 import {missingFieldDisplayLabels} from '@casebee/shared';
-import type {AiReviewDetail, AiReviewItem, BusinessProfile, BusinessRiskScore, CaseDetail, MessageEvent, MessageReplyStatusHistoryItem, Platform, RegistrySearchResult, ReplyStatus} from '@casebee/shared';
-import {enrichBusinessRisk, excludeMessage, getCaseDetail, getGmailAuthUrl, getGmailStatus, getMessageReplyStatusHistory, getMessageReview, getMessages, importMessage, pollGmail, reanalyzeMessage, resolveReview,screenRegistry,  updateMessageReplyStatus, type ImportPipelineResult} from '../services/api';
+import type {AiReviewDetail, AiReviewItem, BusinessProfile, BusinessRiskScore, CaseDetail, MessageEvent, MessageReplyStatusHistoryItem, Platform, RegistryBackgroundCard,RegistrySearchResult, ReplyStatus} from '@casebee/shared';
+import {getRegistryBackground,enrichBusinessRisk, excludeMessage, getCaseDetail, getGmailAuthUrl, getGmailStatus, getMessageReplyStatusHistory, getMessageReview, getMessages, importMessage, pollGmail, reanalyzeMessage, resolveReview,screenRegistry,  updateMessageReplyStatus, type ImportPipelineResult} from '../services/api';
 import type {NavigateToPage} from '../App';
 import '../registry-card.css';
 
@@ -138,6 +138,10 @@ export function MessagesPage({onNavigate, targetMessageId}: MessagesPageProps) {
   const [registryStatus, setRegistryStatus] = useState('');
   const [isScreening, setIsScreening] = useState(false);
   const registryRequestId = useRef(0);
+  const [backgroundCard, setBackgroundCard] = useState<RegistryBackgroundCard | null>(null);
+  const [backgroundStatus, setBackgroundStatus] = useState('');
+  const [loadingBackgroundTaxId, setLoadingBackgroundTaxId] = useState<string | null>(null);
+  const backgroundRequestId = useRef(0);
 
   useEffect(() => {
     getMessages().then(setMessages).catch(() => setMessages([]));
@@ -307,6 +311,10 @@ const refreshAll = async () => {
 
   useEffect(() => {
     registryRequestId.current += 1;
+    backgroundRequestId.current += 1;
+    setBackgroundCard(null);
+    setBackgroundStatus('');
+    setLoadingBackgroundTaxId(null);
     setIsScreening(false);
     setRegistryResult(null);
     setRegistryStatus('');
@@ -441,6 +449,27 @@ const refreshAll = async () => {
     }
   };
 
+    const handleSelectRegistry = async (taxId: string) => {
+    const requestId = ++backgroundRequestId.current;
+    setLoadingBackgroundTaxId(taxId);
+    setBackgroundCard(null);
+    setBackgroundStatus('載入背景卡中...');
+
+    try {
+      const card = await getRegistryBackground(taxId);
+      if (requestId !== backgroundRequestId.current) return;
+      setBackgroundCard(card);
+      setBackgroundStatus('');
+    } catch (error) {
+      if (requestId !== backgroundRequestId.current) return;
+      const message = error instanceof Error ? error.message : '';
+      setBackgroundStatus(message.includes('404') ? '商工登記查無這個統編的公司資料。' : '背景卡載入失敗，請稍後再試。');
+    } finally {
+      if (requestId === backgroundRequestId.current) {
+        setLoadingBackgroundTaxId(null);
+      }
+    }
+  };
     const handleScreenRegistry = async () => {
     const keyword = registryKeyword.trim();
     const taxId = registryTaxId.trim();
@@ -772,11 +801,47 @@ const refreshAll = async () => {
                         <div><dt>負責人</dt><dd>{item.responsibleName ?? '未提供'}</dd></div>
                         <div className="registry-candidate__wide"><dt>登記地址</dt><dd>{item.address ?? '未提供'}</dd></div>
                       </dl>
+                        {item.entityType === 'company' && item.taxId ? (
+                        <button type="button" className="registry-select" onClick={() => handleSelectRegistry(item.taxId as string)} disabled={loadingBackgroundTaxId !== null}>
+                          {loadingBackgroundTaxId === item.taxId ? '載入中...' : '查看背景卡'}
+                        </button>
+                      ) : null}
                     </article>
                   ))}
 
                   {registryResult.hint ? <p className="registry-note">{registryResult.hint}</p> : null}
                   {registryResult.warnings.map((warning) => <p key={warning} className="registry-note registry-note--warning">{warning}</p>)}
+                </div>
+              ) : null}
+                            {backgroundStatus ? <p className="registry-card__status">{backgroundStatus}</p> : null}
+
+              {backgroundCard ? (
+                <div className="registry-background">
+                  <div className="registry-background__top">
+                    <strong>合作對象背景卡</strong>
+                    <span className="registry-background__flag">尚未確認</span>
+                  </div>
+                  <dl className="registry-candidate__grid">
+                    <div><dt>登記名稱</dt><dd>{backgroundCard.registeredName}</dd></div>
+                    <div><dt>統一編號</dt><dd>{backgroundCard.taxId}</dd></div>
+                    <div><dt>登記狀態</dt><dd>{backgroundCard.statusDesc ?? '未提供'}</dd></div>
+                    <div><dt>設立日期</dt><dd>{backgroundCard.setupDate ?? '未提供'}</dd></div>
+                    <div><dt>資本額</dt><dd>{backgroundCard.capitalAmount !== null ? `NT$ ${backgroundCard.capitalAmount.toLocaleString('zh-TW')}` : '未提供'}</dd></div>
+                    <div><dt>負責人</dt><dd>{backgroundCard.responsibleName ?? '未提供'}</dd></div>
+                    <div className="registry-candidate__wide"><dt>登記地址</dt><dd>{backgroundCard.address ?? '未提供'}</dd></div>
+                    <div className="registry-candidate__wide">
+                      <dt>營業項目</dt>
+                      <dd>
+                        {backgroundCard.businessItemsStatus === 'unavailable'
+                          ? '暫時無法查詢'
+                          : backgroundCard.businessItems.length > 0
+                            ? <ul className="registry-background__items">{backgroundCard.businessItems.map((item) => <li key={item.code}>{item.code} {item.description}</li>)}</ul>
+                            : '登記資料未列出營業項目'}
+                      </dd>
+                    </div>
+                  </dl>
+                  {backgroundCard.warnings.map((warning) => <p key={warning} className="registry-note registry-note--warning">{warning}</p>)}
+                  <p className="registry-note">查詢時間 {new Date(backgroundCard.queriedAt).toLocaleString('zh-TW')}｜資料來源：經濟部商工行政資料開放平臺｜尚未確認對方是否為此登記主體本人，請用公司官方聯絡管道確認。</p>
                 </div>
               ) : null}
 

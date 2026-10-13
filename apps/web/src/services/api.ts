@@ -1,4 +1,4 @@
-import type {AiExtraction, AiReviewDetail, AiReviewHistoryItem, AiReviewItem, Alert, BusinessProfile, BusinessRiskScore, BusinessRiskSummary, CaseDetail, CaseRecord, CaseStatus, CreateRagExampleInput, CustomerDetail, CustomerSummary, MessageEvent, MessageReplyStatusHistoryItem, Platform, RagExample, RegistrySearchResult, ReplyStatus, RuleScheduleStatus, ThreadAwareExtractionResult} from '@casebee/shared';
+import type {AiExtraction, AiReviewDetail, AiReviewHistoryItem, AiReviewItem, Alert, BusinessProfile, BusinessRiskScore, BusinessRiskSummary, CaseDetail, CaseRecord, CaseStatus, CreateRagExampleInput, CustomerDetail, CustomerSummary, MessageEvent, MessageReplyStatusHistoryItem, Platform, RagExample, RegistryBackgroundCard,RegistrySearchResult, ReplyStatus, RuleScheduleStatus, ThreadAwareExtractionResult} from '@casebee/shared';
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000';
 
@@ -179,4 +179,8 @@ export function enrichBusinessRisk(input: {customerName: string; taxId?: string;
 
 export function screenRegistry(input: {taxId?: string; keyword?: string}) {
   return post<RegistrySearchResult>('/api/business/screen', input);
+}
+
+export function getRegistryBackground(taxId: string) {
+  return post<RegistryBackgroundCard>('/api/business/background', {taxId});
 }
